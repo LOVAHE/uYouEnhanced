@@ -4,6 +4,7 @@ export SYSROOT = $(SDK_PATH)
 export ARCHS = arm64
 
 export libcolorpicker_ARCHS = arm64
+export libcolorpicker_CFLAGS = -Wno-error=deprecated-declarations
 export libFLEX_ARCHS = arm64
 export Alderis_XCODEOPTS = LD_DYLIB_INSTALL_NAME=@rpath/Alderis.framework/Alderis
 export Alderis_XCODEFLAGS = DYLIB_INSTALL_NAME_BASE=/Library/Frameworks BUILD_LIBRARY_FOR_DISTRIBUTION=YES ARCHS="$(ARCHS)"

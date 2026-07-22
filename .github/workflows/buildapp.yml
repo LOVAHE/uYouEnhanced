@@ -13,12 +13,7 @@ on:
         type: string
       uyou_version:
         description: "uYou Version"
-        default: "3.1.0"
-        required: true
-        type: string
-      uyou_deb_url:
-        description: "Direct URL of the matching uYou deb"
-        default: ""
+        default: "3.0.4"
         required: true
         type: string
       decrypted_youtube_url:
@@ -120,14 +115,11 @@ jobs:
         env:
           THEOS: ${{ github.workspace }}/theos
 
-      - name: Mask download URLs
+      - name: Mask YouTube IPA URL
         run: |
           URL_YT="$(jq -r '.inputs.decrypted_youtube_url' $GITHUB_EVENT_PATH)"
-          URL_UYOU="$(jq -r '.inputs.uyou_deb_url' $GITHUB_EVENT_PATH)"
           echo "::add-mask::$URL_YT"
-          echo "::add-mask::$URL_UYOU"
           echo "URL_YT=$URL_YT" >> "$GITHUB_ENV"
-          echo "URL_UYOU=$URL_UYOU" >> "$GITHUB_ENV"
 
       - name: Prepare YouTube iPA
         id: prepare_youtube
@@ -156,8 +148,7 @@ jobs:
             DISPLAY_NAME="$APP_NAME" \
             BUNDLE_ID="$BUNDLE_ID" \
             YOUTUBE_VERSION="$YOUTUBE_VERSION" \
-            UYOU_VERSION="$UYOU_VERSION" \
-            UYOU_URL="$UYOU_URL"
+            UYOU_VERSION="$UYOU_VERSION"
           echo "package=$(ls -t packages | head -n1)" >>$GITHUB_OUTPUT
           echo -e "==> \033[1mSHASUM256: $(shasum -a 256 packages/*.ipa | cut -f1 -d' ')\033[0m"
           echo -e "==> \033[1mBundle ID: ${{ env.BUNDLE_ID }}\033[0m"
@@ -167,7 +158,6 @@ jobs:
           SDK_VERSION: ${{ inputs.sdk_version }}
           YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
           UYOU_VERSION: ${{ inputs.uyou_version }}
-          UYOU_URL: ${{ env.URL_UYOU }}
           BUNDLE_ID: ${{ inputs.bundle_id }}
           APP_NAME: ${{ inputs.app_name }}
 

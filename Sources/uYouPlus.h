@@ -61,6 +61,11 @@
 #import <YouTubeHeader/YTWatchViewController.h>
 #import "uYouPlusThemes.h" // uYouPlus Themes
 
+// Present in YouTube's GPBMessage runtime, but omitted from recent YouTubeHeader definitions.
+@interface GPBMessage (uYouEnhancedPrivateAPI)
+- (id)firstSubmessage;
+@end
+
 #define LOC(x) [tweakBundle localizedStringForKey:x value:nil table:nil]
 #define IS_ENABLED(k) [[NSUserDefaults standardUserDefaults] boolForKey:k]
 #define APP_THEME_IDX [[NSUserDefaults standardUserDefaults] integerForKey:@"appTheme"]

@@ -149,8 +149,91 @@ jobs:
             BUNDLE_ID="$BUNDLE_ID" \
             YOUTUBE_VERSION="$YOUTUBE_VERSION" \
             UYOU_VERSION="$UYOU_VERSION"
-          echo "package=$(ls -t packages | head -n1)" >>$GITHUB_OUTPUT
-          echo -e "==> \033[1mSHASUM256: $(shasum -a 256 packages/*.ipa | cut -f1 -d' ')\033[0m"
+
+          shopt -s nullglob
+          ipa_files=(packages/*.ipa)
+          if (( ${#ipa_files[@]} != 1 )); then
+            echo "Expected exactly one IPA, found ${#ipa_files[@]}" >&2
+            exit 1
+          fi
+          package="${ipa_files[0]}"
+
+          unzip -tq "$package"
+
+          required_files=(
+            uYouEnhanced.dylib
+            uYou.dylib
+            libFLEX.dylib
+            iSponsorBlock.dylib
+            YTABConfig.dylib
+            YTIcons.dylib
+            YouGroupSettings.dylib
+            YouLoop.dylib
+            YouMute.dylib
+            YouPiP.dylib
+            YouQuality.dylib
+            YouSlider.dylib
+            YouSpeed.dylib
+            YouTimeStamp.dylib
+            YouTubeDislikesReturn.dylib
+            DontEatMyContent.dylib
+            YTHoldForSpeed.dylib
+            YTUHD.dylib
+            YTVideoOverlay.dylib
+            YTweaks.dylib
+            libcolorpicker.dylib
+          )
+          for file in "${required_files[@]}"; do
+            unzip -Z1 "$package" "Payload/YouTube.app/Frameworks/$file" >/dev/null || {
+              echo "Missing Frameworks/$file in IPA" >&2
+              exit 1
+            }
+          done
+
+          required_entries=(
+            Frameworks/Alderis.framework/Alderis
+            Frameworks/CydiaSubstrate.framework/CydiaSubstrate
+            PlugIns/OpenYoutubeSafariExtension.appex/OpenYoutube
+            PlugIns/ShareServiceExtension.appex/Youtube
+          )
+          for entry in "${required_entries[@]}"; do
+            unzip -Z1 "$package" "Payload/YouTube.app/$entry" >/dev/null || {
+              echo "Missing $entry in IPA" >&2
+              exit 1
+            }
+          done
+
+          required_directories=(
+            DontEatMyContent.bundle
+            RYD.bundle
+            YTABC.bundle
+            YTHoldForSpeed.bundle
+            YTUHD.bundle
+            YTVideoOverlay.bundle
+            YTWKS.bundle
+            YouGroupSettings.bundle
+            YouLoop.bundle
+            YouMute.bundle
+            YouPiP.bundle
+            YouQuality.bundle
+            YouSlider.bundle
+            YouSpeed.bundle
+            YouTimeStamp.bundle
+            iSponsorBlock.bundle
+            uYouBundle.bundle
+            uYouLocalization.bundle
+            uYouPlus.bundle
+          )
+          for directory in "${required_directories[@]}"; do
+            unzip -Z1 "$package" "Payload/YouTube.app/$directory/*" | grep -q . || {
+              echo "Missing $directory in IPA" >&2
+              exit 1
+            }
+          done
+
+          package_name="$(basename "$package")"
+          echo "package=$package_name" >> "$GITHUB_OUTPUT"
+          echo -e "==> \033[1mSHASUM256: $(shasum -a 256 "$package" | cut -f1 -d' ')\033[0m"
           echo -e "==> \033[1mBundle ID: ${{ env.BUNDLE_ID }}\033[0m"
 
         env:

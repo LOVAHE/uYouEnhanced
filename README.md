@@ -323,7 +323,7 @@ And thanks to the developers qnblackcat, PoomSmart & other  allowing me to expan
 | **DontEatMyContent** | [therealFoxster](https://github.com/therealFoxster) | 1.1.11 | [✔︎](https://github.com/therealFoxster/DontEatMyContent) |
 | **YTSpeed** | [Lyvendia](https://github.com/Lyvendia) | 1.0.1 | [✔︎](https://github.com/Lyvendia/YTSpeed) |
 | **Alderis Color Picker** | [HASHBANG Productions](https://github.com/hbang) | 1.2 | [✔︎](https://github.com/hbang/Alderis) |
-| **YTUHD** | [PoomSmart](https://twitter.com/poomsmart) | 2.2.3 | [✔︎](https://github.com/PoomSmart/YTUHD) |
+| **YTUHD** | [PoomSmart](https://twitter.com/poomsmart) | 2.6.0 | [✔︎](https://github.com/PoomSmart/YTUHD) |
 | **YouLoop** | [bhackel](https://github.com/bhackel) | 1.1.0 | [✔︎](https://github.com/bhackel/YouLoop) |
 | **YouMute** | [PoomSmart](https://twitter.com/poomsmart) | 1.3.3 | [✔︎](https://github.com/PoomSmart/YouMute) |
 | **YouPiP** | [PoomSmart](https://twitter.com/poomsmart) | 1.12.10 | [✔︎](https://github.com/PoomSmart/YouPiP) |

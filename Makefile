@@ -65,6 +65,7 @@ ifneq ($(JAILBROKEN),1)
 YTUHD_PROJECT_DIR := $(THEOS_PROJECT_DIR)/Tweaks/YTUHD
 YTUHD_LIBVPX_A := $(YTUHD_PROJECT_DIR)/vendor/libvpx_ios/libvpx.a
 YTUHD_DAV1D_A := $(YTUHD_PROJECT_DIR)/vendor/dav1d_ios/libdav1d.a
+YTWEEKS_PROJECT_DIR := $(THEOS_PROJECT_DIR)/Tweaks/YTweaks
 
 .PHONY: ytuhd-all
 ytuhd-all:
@@ -77,7 +78,17 @@ ytuhd-all:
 
 before-all:: ytuhd-all
 
-SUBPROJECTS += Tweaks/Alderis Tweaks/DontEatMyContent Tweaks/FLEXing/libflex Tweaks/iSponsorBlock Tweaks/Return-YouTube-Dislikes Tweaks/YTABConfig Tweaks/YouGroupSettings Tweaks/YTIcons Tweaks/YouLoop Tweaks/YouMute Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSlider Tweaks/YouSpeed Tweaks/YouTimeStamp Tweaks/YTHoldForSpeed Tweaks/YTVideoOverlay Tweaks/YTweaks
+.PHONY: ytweaks-all
+ytweaks-all:
+	+$(MAKE) -C $(YTWEEKS_PROJECT_DIR) all \
+		THEOS_PROJECT_DIR=$(YTWEEKS_PROJECT_DIR) \
+		_THEOS_LOCAL_DATA_DIR=$(_THEOS_LOCAL_DATA_DIR) \
+		YTweaks_CFLAGS="-fobjc-arc -Wno-error=deprecated-declarations" \
+		SIDELOAD=1
+
+before-all:: ytweaks-all
+
+SUBPROJECTS += Tweaks/Alderis Tweaks/DontEatMyContent Tweaks/FLEXing/libflex Tweaks/iSponsorBlock Tweaks/Return-YouTube-Dislikes Tweaks/YTABConfig Tweaks/YouGroupSettings Tweaks/YTIcons Tweaks/YouLoop Tweaks/YouMute Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSlider Tweaks/YouSpeed Tweaks/YouTimeStamp Tweaks/YTHoldForSpeed Tweaks/YTVideoOverlay
 include $(THEOS_MAKE_PATH)/aggregate.mk
 endif
 include $(THEOS_MAKE_PATH)/tweak.mk
@@ -113,3 +124,4 @@ else
 before-package::
 	@mkdir -p $(THEOS_STAGING_DIR)/Library/Application\ Support; cp -r Localizations/uYouPlus.bundle $(THEOS_STAGING_DIR)/Library/Application\ Support/
 endif
+

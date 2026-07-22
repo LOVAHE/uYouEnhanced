@@ -62,7 +62,22 @@ $(TWEAK_NAME)_EMBED_EXTENSIONS = $(wildcard Extensions/*.appex)
 
 include $(THEOS)/makefiles/common.mk
 ifneq ($(JAILBROKEN),1)
-SUBPROJECTS += Tweaks/Alderis Tweaks/DontEatMyContent Tweaks/FLEXing/libflex Tweaks/iSponsorBlock Tweaks/Return-YouTube-Dislikes Tweaks/YTABConfig Tweaks/YouGroupSettings Tweaks/YTIcons Tweaks/YouLoop Tweaks/YouMute Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSlider Tweaks/YouSpeed Tweaks/YouTimeStamp Tweaks/YTHoldForSpeed Tweaks/YTUHD Tweaks/YTVideoOverlay Tweaks/YTweaks
+YTUHD_PROJECT_DIR := $(THEOS_PROJECT_DIR)/Tweaks/YTUHD
+YTUHD_LIBVPX_A := $(YTUHD_PROJECT_DIR)/vendor/libvpx_ios/libvpx.a
+YTUHD_DAV1D_A := $(YTUHD_PROJECT_DIR)/vendor/dav1d_ios/libdav1d.a
+
+.PHONY: ytuhd-all
+ytuhd-all:
+	@if [[ ! -f $(YTUHD_LIBVPX_A) ]]; then $(YTUHD_PROJECT_DIR)/vendor/build_libvpx.sh; fi
+	@if [[ ! -f $(YTUHD_DAV1D_A) ]]; then $(YTUHD_PROJECT_DIR)/vendor/build_dav1d.sh; fi
+	+$(MAKE) -C $(YTUHD_PROJECT_DIR) all \
+		THEOS_PROJECT_DIR=$(YTUHD_PROJECT_DIR) \
+		_THEOS_LOCAL_DATA_DIR=$(_THEOS_LOCAL_DATA_DIR) \
+		SIDELOAD=1
+
+before-all:: ytuhd-all
+
+SUBPROJECTS += Tweaks/Alderis Tweaks/DontEatMyContent Tweaks/FLEXing/libflex Tweaks/iSponsorBlock Tweaks/Return-YouTube-Dislikes Tweaks/YTABConfig Tweaks/YouGroupSettings Tweaks/YTIcons Tweaks/YouLoop Tweaks/YouMute Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSlider Tweaks/YouSpeed Tweaks/YouTimeStamp Tweaks/YTHoldForSpeed Tweaks/YTVideoOverlay Tweaks/YTweaks
 include $(THEOS_MAKE_PATH)/aggregate.mk
 endif
 include $(THEOS_MAKE_PATH)/tweak.mk

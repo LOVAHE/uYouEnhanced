@@ -16,16 +16,16 @@ MODULES = jailed
 endif
 
 ifndef YOUTUBE_VERSION
-YOUTUBE_VERSION = 20.44.2
+YOUTUBE_VERSION = 21.29.03
 endif
 ifndef UYOU_VERSION
-UYOU_VERSION = 3.0.4
+UYOU_VERSION = 3.1.0
 endif
-ifndef UYOUENHANCED_VERSION
-UYOUENHANCED_VERSION = 3.1.0
+ifndef UYOU_URL
+UYOU_URL =
 endif
 PACKAGE_NAME = $(TWEAK_NAME)
-PACKAGE_VERSION = $(UYOUENHANCED_VERSION)
+PACKAGE_VERSION = $(YOUTUBE_VERSION)-$(UYOU_VERSION)
 
 INSTALL_TARGET_PROCESSES = YouTube
 TWEAK_NAME = uYouEnhanced
@@ -83,15 +83,18 @@ internal-clean::
 ifneq ($(JAILBROKEN),1)
 before-all::
 	@if [[ ! -f $(UYOU_DEB) ]]; then \
-		rm -rf $(UYOU_PATH)/*; \
+		if [[ -z "$(UYOU_URL)" ]]; then \
+			$(PRINT_FORMAT_ERROR) "uYou $(UYOU_VERSION) is not bundled; provide UYOU_URL"; exit 1; \
+		fi; \
 		$(PRINT_FORMAT_BLUE) "Downloading uYou"; \
-	fi
-before-all::
-	@if [[ ! -f $(UYOU_DEB) ]]; then \
- 		curl -s -L "https://www.dropbox.com/scl/fi/01vvu5lm8nkkicrznku9v/com.miro.uyou_$(UYOU_VERSION)_iphoneos-arm.deb?rlkey=efgz7po8kqqvha8doplk1s3ky&dl=1" -o $(UYOU_DEB); \
- 	fi; \
+		curl --fail --location --silent --show-error "$(UYOU_URL)" --output $(UYOU_DEB); \
+	fi; \
+	actual_uyou_version=$$(dpkg-deb --field $(UYOU_DEB) Version); \
+	if [[ "$$actual_uyou_version" != "$(UYOU_VERSION)" ]]; then \
+		$(PRINT_FORMAT_ERROR) "Expected uYou $(UYOU_VERSION), got $$actual_uyou_version"; exit 1; \
+	fi; \
 	if [[ ! -f $(UYOU_DYLIB) || ! -d $(UYOU_BUNDLE) ]]; then \
-		tar -xf Tweaks/uYou/com.miro.uyou_$(UYOU_VERSION)_iphoneos-arm.deb -C Tweaks/uYou; tar -xf Tweaks/uYou/data.tar* -C Tweaks/uYou; \
+		tar -xf $(UYOU_DEB) -C $(UYOU_PATH); tar -xf $(UYOU_PATH)/data.tar* -C $(UYOU_PATH); \
 		if [[ ! -f $(UYOU_DYLIB) || ! -d $(UYOU_BUNDLE) ]]; then \
 			$(PRINT_FORMAT_ERROR) "Failed to extract uYou"; exit 1; \
 		fi; \

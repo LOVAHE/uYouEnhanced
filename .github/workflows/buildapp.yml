@@ -13,12 +13,12 @@ on:
         type: string
       uyou_version:
         description: "uYou Version"
-        default: "3.0.4"
+        default: "3.1.0"
         required: true
         type: string
-      uyouenhanced_version:
-        description: "uYouEnhanced Version"
-        default: "3.1.0"
+      uyou_deb_url:
+        description: "Direct URL of the matching uYou deb"
+        default: ""
         required: true
         type: string
       decrypted_youtube_url:
@@ -120,11 +120,14 @@ jobs:
         env:
           THEOS: ${{ github.workspace }}/theos
 
-      - name: Hash YT ipa url
+      - name: Mask download URLs
         run: |
           URL_YT="$(jq -r '.inputs.decrypted_youtube_url' $GITHUB_EVENT_PATH)"
-          echo ::add-mask::$URL_YT
-          echo URL_YT=$URL_YT >> $GITHUB_ENV
+          URL_UYOU="$(jq -r '.inputs.uyou_deb_url' $GITHUB_EVENT_PATH)"
+          echo "::add-mask::$URL_YT"
+          echo "::add-mask::$URL_UYOU"
+          echo "URL_YT=$URL_YT" >> "$GITHUB_ENV"
+          echo "URL_UYOU=$URL_UYOU" >> "$GITHUB_ENV"
 
       - name: Prepare YouTube iPA
         id: prepare_youtube
@@ -154,7 +157,7 @@ jobs:
             BUNDLE_ID="$BUNDLE_ID" \
             YOUTUBE_VERSION="$YOUTUBE_VERSION" \
             UYOU_VERSION="$UYOU_VERSION" \
-            UYOUENHANCED_VERSION="$UYOUENHANCED_VERSION"
+            UYOU_URL="$UYOU_URL"
           echo "package=$(ls -t packages | head -n1)" >>$GITHUB_OUTPUT
           echo -e "==> \033[1mSHASUM256: $(shasum -a 256 packages/*.ipa | cut -f1 -d' ')\033[0m"
           echo -e "==> \033[1mBundle ID: ${{ env.BUNDLE_ID }}\033[0m"
@@ -164,7 +167,7 @@ jobs:
           SDK_VERSION: ${{ inputs.sdk_version }}
           YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
           UYOU_VERSION: ${{ inputs.uyou_version }}
-          UYOUENHANCED_VERSION: ${{ inputs.uyouenhanced_version }}
+          UYOU_URL: ${{ env.URL_UYOU }}
           BUNDLE_ID: ${{ inputs.bundle_id }}
           APP_NAME: ${{ inputs.app_name }}
 
@@ -172,10 +175,10 @@ jobs:
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         env:
-          UYOUENHANCED_VERSION: ${{ inputs.uyouenhanced_version }}
+          UYOU_VERSION: ${{ inputs.uyou_version }}
           YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
         with:
-          name: uYouEnhanced_v${{ env.UYOUENHANCED_VERSION }}_YouTube_v${{ env.YOUTUBE_VERSION }}
+          name: uYouEnhanced_v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}
           path: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
           if-no-files-found: error
 
@@ -186,11 +189,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UYOU_VERSION: ${{ inputs.uyou_version }}
-          UYOUENHANCED_VERSION: ${{ inputs.uyouenhanced_version }}
           YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
         with:
-          tag_name: v${{ env.UYOUENHANCED_VERSION }}
-          name: uYouEnhanced v${{ env.UYOUENHANCED_VERSION }}
+          tag_name: v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}
+          name: uYouEnhanced v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}
           body: Built for YouTube v${{ env.YOUTUBE_VERSION }} with uYou v${{ env.UYOU_VERSION }}.
           files: main/packages/*.ipa
           draft: true

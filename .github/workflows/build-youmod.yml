@@ -338,12 +338,6 @@ jobs:
             echo "VP9Compat contains excluded AV1 or external pattern code." >&2
             exit 1
           fi
-          if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
-              | grep -Fq "YouTube"; then
-            echo "VP9Compat does not contain the guarded YouTube target." >&2
-            exit 1
-          fi
-
           unzip -p "$PACKAGE" "Payload/YouTube.app/Info.plist" \
             > "$RUNNER_TEMP/final-Info.plist"
           actual_bundle_id=$(

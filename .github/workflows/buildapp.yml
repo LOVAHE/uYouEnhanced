@@ -337,7 +337,7 @@ jobs:
           required_directories=()
           if [[ "$PROFILE" == "uyou-only" ]]; then
             required_directories=(uYouBundle.bundle)
-          elif [[ "$PROFILE" == "no-uyou" ]]; then
+          elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == source-* ]]; then
             required_directories=(
               DontEatMyContent.bundle RYD.bundle YTABC.bundle YTHoldForSpeed.bundle
               YTUHD.bundle YTVideoOverlay.bundle YTWKS.bundle YouGroupSettings.bundle
@@ -346,7 +346,7 @@ jobs:
               uYouLocalization.bundle uYouPlus.bundle
             )
           elif [[ "$PROFILE" == "enhanced-core" || "$PROFILE" == "extras-a" ||
-                  "$PROFILE" == "extras-b" || "$PROFILE" == source-* ||
+                  "$PROFILE" == "extras-b" ||
                   "$PROFILE" == "full" ]]; then
             required_directories=(
               DontEatMyContent.bundle RYD.bundle YTABC.bundle YTHoldForSpeed.bundle

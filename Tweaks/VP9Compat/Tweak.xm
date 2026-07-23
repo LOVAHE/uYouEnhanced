@@ -32,18 +32,6 @@ static id VP9CompatValueForKey(id object, NSString *key) {
     }
 }
 
-static void VP9CompatSetBool(id object, SEL selector, NSString *key, BOOL value) {
-    if (!object) return;
-    if ([object respondsToSelector:selector]) {
-        ((void (*)(id, SEL, BOOL))objc_msgSend)(object, selector, value);
-        return;
-    }
-    @try {
-        [object setValue:@(value) forKey:key];
-    } @catch (__unused NSException *exception) {
-    }
-}
-
 static void VP9CompatSetInt(id object, SEL selector, NSString *key, int value) {
     if (!object) return;
     if ([object respondsToSelector:selector]) {
@@ -60,24 +48,10 @@ static void VP9CompatConfigurePlayer(id playerItem) {
     id config = VP9CompatValueForKey(playerItem, @"_hamplayerConfig");
     if (!config) return;
 
-    VP9CompatSetBool(
-        config,
-        NSSelectorFromString(@"setDisableResolveOverlappingQualitiesByCodec:"),
-        @"disableResolveOverlappingQualitiesByCodec",
-        NO
-    );
-
     id streamFilter = VP9CompatObjectForSelector(config, NSSelectorFromString(@"streamFilter"));
     if (!streamFilter)
         streamFilter = VP9CompatValueForKey(config, @"streamFilter");
     if (!streamFilter) return;
-
-    VP9CompatSetBool(
-        streamFilter,
-        NSSelectorFromString(@"setEnableVideoCodecSplicing:"),
-        @"enableVideoCodecSplicing",
-        YES
-    );
 
     id vp9Filter = VP9CompatObjectForSelector(streamFilter, NSSelectorFromString(@"vp9"));
     if (!vp9Filter)
@@ -168,10 +142,6 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
 
 %hook YTHotConfig
 
-- (BOOL)iosPlayerClientSharedConfigPostponeCabrPreferredFormatFiltering {
-    return YES;
-}
-
 - (BOOL)iosPlayerClientSharedConfigHamplayerPrepareVideoDecoderForAvsbdl {
     return YES;
 }
@@ -242,15 +212,6 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
     return %orig;
 }
 
-- (void)prepareDecoderForFormatDescription:(id)formatDescription
-                             delegateQueue:(dispatch_queue_t)delegateQueue {
-    // The app binary is patched to advertise VP9 capability. Do not let its
-    // eager preparation path cache a hardware decoder that a resigned app
-    // cannot use; VP9 is created on demand by the software factory hook above.
-    if (!VP9CompatIsVP9(formatDescription))
-        %orig;
-}
-
 %end
 
 %end
@@ -307,10 +268,6 @@ static BOOL VP9CompatHasInstanceMethod(const char *className, SEL selector) {
             VP9CompatHasInstanceMethod(
                 "YTHotConfig",
                 @selector(iosPlayerClientSharedConfigHamplayerAlwaysEnqueueDecodedSampleBuffersToAvsbdl)
-            ) &&
-            VP9CompatHasInstanceMethod(
-                "YTHotConfig",
-                @selector(iosPlayerClientSharedConfigPostponeCabrPreferredFormatFiltering)
             ))
             %init(VP9CompatHotConfig);
 

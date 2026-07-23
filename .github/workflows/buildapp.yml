@@ -59,6 +59,7 @@ on:
         options:
           - standard
           - split
+          - sources
   
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ fromJSON(inputs.diagnostic_mode && (inputs.diagnostic_set == 'split' && '["enhanced-core", "extras-a", "extras-b"]' || '["base", "uyou-only", "no-uyou", "full"]') || '["full"]') }}
+        profile: ${{ fromJSON(inputs.diagnostic_mode && (inputs.diagnostic_set == 'sources' && '["source-shell", "source-main", "source-patches", "source-settings", "source-visuals"]' || inputs.diagnostic_set == 'split' && '["enhanced-core", "extras-a", "extras-b"]' || '["base", "uyou-only", "no-uyou", "full"]') || '["full"]') }}
 
     steps:
       - name: Checkout Main
@@ -231,6 +232,17 @@ jobs:
                 YTHoldForSpeed.dylib YTUHD.dylib YTVideoOverlay.dylib YTweaks.dylib
               )
               ;;
+            source-shell|source-main|source-patches|source-settings|source-visuals)
+              required_files=(uYouEnhanced.dylib uYouCompat.dylib libcolorpicker.dylib)
+              forbidden_files=(
+                uYou.dylib libFLEX.dylib iSponsorBlock.dylib YTABConfig.dylib
+                YTIcons.dylib YouGroupSettings.dylib YouLoop.dylib YouMute.dylib
+                YouPiP.dylib YouQuality.dylib YouSlider.dylib YouSpeed.dylib
+                YouTimeStamp.dylib YouTubeDislikesReturn.dylib
+                DontEatMyContent.dylib YTHoldForSpeed.dylib YTUHD.dylib
+                YTVideoOverlay.dylib YTweaks.dylib
+              )
+              ;;
             extras-a)
               required_files=(
                 uYouEnhanced.dylib uYou.dylib uYouCompat.dylib libcolorpicker.dylib
@@ -306,6 +318,7 @@ jobs:
             required_entries=(Frameworks/CydiaSubstrate.framework/CydiaSubstrate)
           elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == "enhanced-core" ||
                   "$PROFILE" == "extras-a" || "$PROFILE" == "extras-b" ||
+                  "$PROFILE" == source-* ||
                   "$PROFILE" == "full" ]]; then
             required_entries=(
               Frameworks/Alderis.framework/Alderis
@@ -333,7 +346,8 @@ jobs:
               uYouLocalization.bundle uYouPlus.bundle
             )
           elif [[ "$PROFILE" == "enhanced-core" || "$PROFILE" == "extras-a" ||
-                  "$PROFILE" == "extras-b" || "$PROFILE" == "full" ]]; then
+                  "$PROFILE" == "extras-b" || "$PROFILE" == source-* ||
+                  "$PROFILE" == "full" ]]; then
             required_directories=(
               DontEatMyContent.bundle RYD.bundle YTABC.bundle YTHoldForSpeed.bundle
               YTUHD.bundle YTVideoOverlay.bundle YTWKS.bundle YouGroupSettings.bundle
@@ -405,4 +419,3 @@ jobs:
           files: main/packages/*.ipa
           draft: true
           overwrite_files: true
-

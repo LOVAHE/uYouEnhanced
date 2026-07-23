@@ -46,6 +46,11 @@ on:
         default: true
         required: false
         type: boolean
+      diagnostic_mode:
+        description: "Build startup-isolation artifacts (base, uYou only, no uYou, full)"
+        default: false
+        required: false
+        type: boolean
   
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -53,10 +58,14 @@ concurrency:
 
 jobs:
   build:
-    name: Build uYouEnhanced
+    name: Build uYouEnhanced (${{ matrix.profile }})
     runs-on: macos-15
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(inputs.diagnostic_mode && '["base", "uyou-only", "no-uyou", "full"]' || '["full"]') }}
 
     steps:
       - name: Checkout Main
@@ -151,23 +160,33 @@ jobs:
         id: build_package
         run: |
           cd ${{ github.workspace }}/main
-          make package \
-            THEOS_PACKAGE_SCHEME=rootless \
-            IPA=Payload/YouTube.app \
-            FINALPACKAGE=1 \
-            TARGET="iphone:clang:${SDK_VERSION}:14.0" \
-            DISPLAY_NAME="$APP_NAME" \
-            BUNDLE_ID="$BUNDLE_ID" \
-            YOUTUBE_VERSION="$YOUTUBE_VERSION" \
-            UYOU_VERSION="$UYOU_VERSION"
+          mkdir -p packages
 
-          shopt -s nullglob
-          ipa_files=(packages/*.ipa)
-          if (( ${#ipa_files[@]} != 1 )); then
-            echo "Expected exactly one IPA, found ${#ipa_files[@]}" >&2
-            exit 1
+          if [[ "$PROFILE" == "base" ]]; then
+            package="packages/YouTube_${YOUTUBE_VERSION}_diagnostic-base.ipa"
+            ditto -c -k --sequesterRsrc --keepParent Payload "$package"
+          else
+            make package \
+              THEOS_PACKAGE_SCHEME=rootless \
+              IPA=Payload/YouTube.app \
+              FINALPACKAGE=1 \
+              TARGET="iphone:clang:${SDK_VERSION}:14.0" \
+              DISPLAY_NAME="$APP_NAME" \
+              BUNDLE_ID="$BUNDLE_ID" \
+              YOUTUBE_VERSION="$YOUTUBE_VERSION" \
+              UYOU_VERSION="$UYOU_VERSION" \
+              DIAGNOSTIC_PROFILE="$PROFILE"
+
+            shopt -s nullglob
+            ipa_files=(packages/*.ipa)
+            if (( ${#ipa_files[@]} != 1 )); then
+              echo "Expected exactly one IPA, found ${#ipa_files[@]}" >&2
+              exit 1
+            fi
+            built_package="${ipa_files[0]}"
+            package="packages/uYouEnhanced_${YOUTUBE_VERSION}-${UYOU_VERSION}_diagnostic-${PROFILE}.ipa"
+            mv "$built_package" "$package"
           fi
-          package="${ipa_files[0]}"
 
           unzip -tq "$package"
 
@@ -180,42 +199,62 @@ jobs:
             exit 1
           fi
 
-          required_files=(
-            uYouEnhanced.dylib
-            uYou.dylib
-            libFLEX.dylib
-            iSponsorBlock.dylib
-            YTABConfig.dylib
-            YTIcons.dylib
-            YouGroupSettings.dylib
-            YouLoop.dylib
-            YouMute.dylib
-            YouPiP.dylib
-            YouQuality.dylib
-            YouSlider.dylib
-            YouSpeed.dylib
-            YouTimeStamp.dylib
-            YouTubeDislikesReturn.dylib
-            DontEatMyContent.dylib
-            YTHoldForSpeed.dylib
-            YTUHD.dylib
-            YTVideoOverlay.dylib
-            YTweaks.dylib
-            libcolorpicker.dylib
-          )
+          required_files=()
+          forbidden_files=()
+          case "$PROFILE" in
+            base)
+              forbidden_files=(uYouEnhanced.dylib uYou.dylib uYouCompat.dylib)
+              ;;
+            uyou-only)
+              required_files=(uYouEnhanced.dylib uYou.dylib uYouCompat.dylib)
+              forbidden_files=(libFLEX.dylib iSponsorBlock.dylib YTUHD.dylib YTweaks.dylib)
+              ;;
+            no-uyou)
+              required_files=(
+                uYouEnhanced.dylib uYouCompat.dylib libFLEX.dylib iSponsorBlock.dylib
+                YTABConfig.dylib YTIcons.dylib YouGroupSettings.dylib YouLoop.dylib
+                YouMute.dylib YouPiP.dylib YouQuality.dylib YouSlider.dylib
+                YouSpeed.dylib YouTimeStamp.dylib YouTubeDislikesReturn.dylib
+                DontEatMyContent.dylib YTHoldForSpeed.dylib YTUHD.dylib
+                YTVideoOverlay.dylib YTweaks.dylib libcolorpicker.dylib
+              )
+              forbidden_files=(uYou.dylib)
+              ;;
+            full)
+              required_files=(
+                uYouEnhanced.dylib uYou.dylib uYouCompat.dylib libFLEX.dylib iSponsorBlock.dylib
+                YTABConfig.dylib YTIcons.dylib YouGroupSettings.dylib YouLoop.dylib
+                YouMute.dylib YouPiP.dylib YouQuality.dylib YouSlider.dylib
+                YouSpeed.dylib YouTimeStamp.dylib YouTubeDislikesReturn.dylib
+                DontEatMyContent.dylib YTHoldForSpeed.dylib YTUHD.dylib
+                YTVideoOverlay.dylib YTweaks.dylib libcolorpicker.dylib
+              )
+              ;;
+          esac
           for file in "${required_files[@]}"; do
             unzip -Z1 "$package" "Payload/YouTube.app/Frameworks/$file" >/dev/null || {
               echo "Missing Frameworks/$file in IPA" >&2
               exit 1
             }
           done
+          for file in "${forbidden_files[@]}"; do
+            if unzip -Z1 "$package" "Payload/YouTube.app/Frameworks/$file" >/dev/null 2>&1; then
+              echo "Unexpected Frameworks/$file in $PROFILE IPA" >&2
+              exit 1
+            fi
+          done
 
-          required_entries=(
-            Frameworks/Alderis.framework/Alderis
-            Frameworks/CydiaSubstrate.framework/CydiaSubstrate
-            PlugIns/OpenYoutubeSafariExtension.appex/OpenYoutube
-            PlugIns/ShareServiceExtension.appex/Youtube
-          )
+          required_entries=()
+          if [[ "$PROFILE" == "uyou-only" ]]; then
+            required_entries=(Frameworks/CydiaSubstrate.framework/CydiaSubstrate)
+          elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == "full" ]]; then
+            required_entries=(
+              Frameworks/Alderis.framework/Alderis
+              Frameworks/CydiaSubstrate.framework/CydiaSubstrate
+              PlugIns/OpenYoutubeSafariExtension.appex/OpenYoutube
+              PlugIns/ShareServiceExtension.appex/Youtube
+            )
+          fi
           for entry in "${required_entries[@]}"; do
             unzip -Z1 "$package" "Payload/YouTube.app/$entry" >/dev/null || {
               echo "Missing $entry in IPA" >&2
@@ -223,27 +262,18 @@ jobs:
             }
           done
 
-          required_directories=(
-            DontEatMyContent.bundle
-            RYD.bundle
-            YTABC.bundle
-            YTHoldForSpeed.bundle
-            YTUHD.bundle
-            YTVideoOverlay.bundle
-            YTWKS.bundle
-            YouGroupSettings.bundle
-            YouLoop.bundle
-            YouMute.bundle
-            YouPiP.bundle
-            YouQuality.bundle
-            YouSlider.bundle
-            YouSpeed.bundle
-            YouTimeStamp.bundle
-            iSponsorBlock.bundle
-            uYouBundle.bundle
-            uYouLocalization.bundle
-            uYouPlus.bundle
-          )
+          required_directories=()
+          if [[ "$PROFILE" == "uyou-only" ]]; then
+            required_directories=(uYouBundle.bundle)
+          elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == "full" ]]; then
+            required_directories=(
+              DontEatMyContent.bundle RYD.bundle YTABC.bundle YTHoldForSpeed.bundle
+              YTUHD.bundle YTVideoOverlay.bundle YTWKS.bundle YouGroupSettings.bundle
+              YouLoop.bundle YouMute.bundle YouPiP.bundle YouQuality.bundle
+              YouSlider.bundle YouSpeed.bundle YouTimeStamp.bundle iSponsorBlock.bundle
+              uYouBundle.bundle uYouLocalization.bundle uYouPlus.bundle
+            )
+          fi
           for directory in "${required_directories[@]}"; do
             unzip -Z1 "$package" "Payload/YouTube.app/$directory/*" | grep -q . || {
               echo "Missing $directory in IPA" >&2
@@ -263,20 +293,21 @@ jobs:
           UYOU_VERSION: ${{ inputs.uyou_version }}
           BUNDLE_ID: ${{ inputs.bundle_id }}
           APP_NAME: ${{ inputs.app_name }}
+          PROFILE: ${{ matrix.profile }}
 
       - name: Upload Artifact
-        if: ${{ inputs.upload_artifact }}
+        if: ${{ inputs.upload_artifact || inputs.diagnostic_mode }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         env:
           UYOU_VERSION: ${{ inputs.uyou_version }}
           YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
         with:
-          name: uYouEnhanced_v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}
+          name: uYouEnhanced_v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}_${{ matrix.profile }}
           path: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
           if-no-files-found: error
 
       - name: Create Release
-        if: ${{ inputs.create_release }}
+        if: ${{ inputs.create_release && !inputs.diagnostic_mode && matrix.profile == 'full' }}
         id: create_release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         env:

@@ -1,0 +1,9 @@
+Package: com.lovahe.uyoucompat
+Name: uYouCompat
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Compatibility and ad-filtering layer for uYou on current YouTube releases
+Maintainer: LOVAHE
+Author: LOVAHE
+Section: Tweaks
+Depends: mobilesubstrate

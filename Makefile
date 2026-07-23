@@ -29,13 +29,12 @@ INSTALL_TARGET_PROCESSES = YouTube
 TWEAK_NAME = uYouEnhanced
 DISPLAY_NAME = YouTube
 BUNDLE_ID = com.google.ios.youtube
+DIAGNOSTIC_PROFILE ?= full
 
-$(TWEAK_NAME)_FILES := $(wildcard Sources/*.xm) $(wildcard Sources/*.x) $(wildcard Sources/*.m)
-$(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation AVFoundation AVKit Photos Accelerate CoreMotion GameController VideoToolbox Security QuartzCore
-$(TWEAK_NAME)_LIBRARIES = bz2 c++ iconv z
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-but-set-variable -DTWEAK_VERSION=\"$(PACKAGE_VERSION)\"
-$(TWEAK_NAME)_INJECT_DYLIBS = \
-    Tweaks/uYou/Library/MobileSubstrate/DynamicLibraries/uYou.dylib \
+UYOU_INJECT_DYLIB = Tweaks/uYou/Library/MobileSubstrate/DynamicLibraries/uYou.dylib
+UYOU_COMPAT_DYLIB = $(THEOS_OBJ_DIR)/uYouCompat.dylib
+UYOU_CORE_INJECT_DYLIBS = $(UYOU_INJECT_DYLIB) $(UYOU_COMPAT_DYLIB)
+OTHER_INJECT_DYLIBS = \
     $(THEOS_OBJ_DIR)/libFLEX.dylib \
     $(THEOS_OBJ_DIR)/iSponsorBlock.dylib \
     $(THEOS_OBJ_DIR)/YTABConfig.dylib \
@@ -55,13 +54,31 @@ $(TWEAK_NAME)_INJECT_DYLIBS = \
     $(THEOS_OBJ_DIR)/YTVideoOverlay.dylib \
     $(THEOS_OBJ_DIR)/YTweaks.dylib
 
+ifeq ($(DIAGNOSTIC_PROFILE),uyou-only)
+$(TWEAK_NAME)_FILES := Diagnostics/Noop.xm
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS)
+$(TWEAK_NAME)_EMBED_BUNDLES = Bundles/uYouBundle.bundle
+else
+$(TWEAK_NAME)_FILES := $(wildcard Sources/*.xm) $(wildcard Sources/*.x) $(wildcard Sources/*.m)
+ifeq ($(DIAGNOSTIC_PROFILE),no-uyou)
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_COMPAT_DYLIB) $(OTHER_INJECT_DYLIBS)
+else
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS)
+endif
 $(TWEAK_NAME)_EMBED_LIBRARIES = $(THEOS_OBJ_DIR)/libcolorpicker.dylib
 $(TWEAK_NAME)_EMBED_FRAMEWORKS = $(_THEOS_LOCAL_DATA_DIR)/$(THEOS_OBJ_DIR_NAME)/install_Alderis.xcarchive/Products/var/jb/Library/Frameworks/Alderis.framework
 $(TWEAK_NAME)_EMBED_BUNDLES = $(wildcard Bundles/*.bundle)
 $(TWEAK_NAME)_EMBED_EXTENSIONS = $(wildcard Extensions/*.appex)
+endif
+
+$(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation AVFoundation AVKit Photos Accelerate CoreMotion GameController VideoToolbox Security QuartzCore
+$(TWEAK_NAME)_LIBRARIES = bz2 c++ iconv z
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-but-set-variable -DTWEAK_VERSION=\"$(PACKAGE_VERSION)\"
 
 include $(THEOS)/makefiles/common.mk
 ifneq ($(JAILBROKEN),1)
+SUBPROJECTS += Tweaks/uYouCompat
+ifneq ($(DIAGNOSTIC_PROFILE),uyou-only)
 YTUHD_PROJECT_DIR := $(THEOS_PROJECT_DIR)/Tweaks/YTUHD
 YTUHD_LIBVPX_A := $(YTUHD_PROJECT_DIR)/vendor/libvpx_ios/libvpx.a
 YTUHD_DAV1D_A := $(YTUHD_PROJECT_DIR)/vendor/dav1d_ios/libdav1d.a
@@ -89,6 +106,7 @@ ytweaks-all:
 before-all:: ytweaks-all
 
 SUBPROJECTS += Tweaks/Alderis Tweaks/DontEatMyContent Tweaks/FLEXing/libflex Tweaks/iSponsorBlock Tweaks/Return-YouTube-Dislikes Tweaks/YTABConfig Tweaks/YouGroupSettings Tweaks/YTIcons Tweaks/YouLoop Tweaks/YouMute Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSlider Tweaks/YouSpeed Tweaks/YouTimeStamp Tweaks/YTHoldForSpeed Tweaks/YTVideoOverlay
+endif
 include $(THEOS_MAKE_PATH)/aggregate.mk
 endif
 include $(THEOS_MAKE_PATH)/tweak.mk
@@ -105,6 +123,7 @@ internal-clean::
 	@rm -rf $(UYOU_PATH)/*
 
 ifneq ($(JAILBROKEN),1)
+ifneq ($(filter full uyou-only,$(DIAGNOSTIC_PROFILE)),)
 before-all::
 	@if [[ ! -f $(UYOU_DEB) ]]; then \
 		rm -rf $(UYOU_PATH)/*; \
@@ -120,6 +139,7 @@ before-all::
 			$(PRINT_FORMAT_ERROR) "Failed to extract uYou"; exit 1; \
 		fi; \
 	fi;
+endif
 else
 before-package::
 	@mkdir -p $(THEOS_STAGING_DIR)/Library/Application\ Support; cp -r Localizations/uYouPlus.bundle $(THEOS_STAGING_DIR)/Library/Application\ Support/

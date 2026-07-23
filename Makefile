@@ -56,13 +56,40 @@ OTHER_INJECT_DYLIBS_B = \
     $(THEOS_OBJ_DIR)/YouTimeStamp.dylib \
     $(THEOS_OBJ_DIR)/YTUHD.dylib
 OTHER_INJECT_DYLIBS = $(OTHER_INJECT_DYLIBS_A) $(OTHER_INJECT_DYLIBS_B)
+SOURCE_DIAGNOSTIC_PROFILES = source-shell source-main source-patches source-settings source-visuals
+SOURCE_SETTINGS_FILES = \
+    Diagnostics/uYouPlusBundleStub.m \
+    Sources/uYouPlusSettings.xm \
+    Sources/AppIconOptionsController.m \
+    Sources/ColourOptionsController.m \
+    Sources/ColourOptionsController2.m \
+    Sources/RootOptionsController.m
+SOURCE_VISUAL_FILES = \
+    Sources/BigYTMiniPlayer.xm \
+    Sources/Extractor.xm \
+    Sources/LowContrastMode.xm \
+    Sources/uYouPlusThemes.xm \
+    Sources/uYouPlusVersionSpoofer.xm \
+    Sources/YTReExplore.x
 
 ifeq ($(DIAGNOSTIC_PROFILE),uyou-only)
 $(TWEAK_NAME)_FILES := Diagnostics/Noop.xm
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS)
 $(TWEAK_NAME)_EMBED_BUNDLES = Bundles/uYouBundle.bundle
 else
+ifeq ($(DIAGNOSTIC_PROFILE),source-shell)
+$(TWEAK_NAME)_FILES := Diagnostics/Noop.xm
+else ifeq ($(DIAGNOSTIC_PROFILE),source-main)
+$(TWEAK_NAME)_FILES := Sources/uYouPlus.xm
+else ifeq ($(DIAGNOSTIC_PROFILE),source-patches)
+$(TWEAK_NAME)_FILES := Sources/uYouPlusPatches.xm
+else ifeq ($(DIAGNOSTIC_PROFILE),source-settings)
+$(TWEAK_NAME)_FILES := $(SOURCE_SETTINGS_FILES)
+else ifeq ($(DIAGNOSTIC_PROFILE),source-visuals)
+$(TWEAK_NAME)_FILES := $(SOURCE_VISUAL_FILES)
+else
 $(TWEAK_NAME)_FILES := $(wildcard Sources/*.xm) $(wildcard Sources/*.x) $(wildcard Sources/*.m)
+endif
 ifeq ($(DIAGNOSTIC_PROFILE),no-uyou)
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_COMPAT_DYLIB) $(OTHER_INJECT_DYLIBS)
 else ifeq ($(DIAGNOSTIC_PROFILE),enhanced-core)
@@ -71,6 +98,8 @@ else ifeq ($(DIAGNOSTIC_PROFILE),extras-a)
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS_A)
 else ifeq ($(DIAGNOSTIC_PROFILE),extras-b)
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS_B)
+else ifneq ($(filter $(SOURCE_DIAGNOSTIC_PROFILES),$(DIAGNOSTIC_PROFILE)),)
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_COMPAT_DYLIB)
 else
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS)
 endif
@@ -153,5 +182,4 @@ else
 before-package::
 	@mkdir -p $(THEOS_STAGING_DIR)/Library/Application\ Support; cp -r Localizations/uYouPlus.bundle $(THEOS_STAGING_DIR)/Library/Application\ Support/
 endif
-
 

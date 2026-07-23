@@ -1,6 +1,11 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -33,15 +38,20 @@ env:
   YOUTUBE_HEADER_COMMIT: 7a87be7855e2ea8f820f634518388eec9b667ec4
   PS_HEADER_COMMIT: 1bb7d9c7d1bc40a57f83e1e58aa53bcf4acdcbfa
   YOUMOD_COMMIT: a130dbae9d7969ef44754c22d661a55a9e1d3086
+  YTUHD_SOURCE_COMMIT: 9a561cca86ad7a17b39a8df2ae9d634b79d9c793
+  LIBVPX_COMMIT: 908e88c1aa6a12a86feb5d36a919c219c42f1e2c
   PYZULE_COMMIT: 740d3716dcd98c20c000f12cdb88f1f0b2a533a4
 
 jobs:
   build:
-    name: Standard YouMod only
+    name: YouMod with minimal VP9 compatibility
     runs-on: macos-15
     timeout-minutes: 45
 
     steps:
+      - name: Check out VP9 compatibility source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
       - name: Install build dependencies
         run: brew install ldid dpkg make
 
@@ -127,6 +137,30 @@ jobs:
             https://github.com/Tonwalter888/YouMod.git YouMod
           git -C YouMod checkout --quiet --detach "$YOUMOD_COMMIT"
 
+          mkdir -p Tweaks/VP9Compat/vendor/ytuhd
+          source_url="https://raw.githubusercontent.com/PoomSmart/YTUHD/${YTUHD_SOURCE_COMMIT}"
+          curl --fail --location --silent --show-error \
+            "$source_url/HAMVPXVideoDecoder.m" \
+            --output Tweaks/VP9Compat/vendor/ytuhd/HAMVPXVideoDecoder.m
+          curl --fail --location --silent --show-error \
+            "$source_url/VideoDecoderHelper.x" \
+            --output Tweaks/VP9Compat/vendor/ytuhd/VideoDecoderHelper.x
+          (
+            cd Tweaks/VP9Compat/vendor/ytuhd
+            echo \
+              "0a9c41131b6a60881912b87bda50f76edad5a941bfe50d72e8a4fc674db95081  HAMVPXVideoDecoder.m" \
+              | shasum -a 256 -c -
+            echo \
+              "fba6a80f3e8630d446ff465a901952d58617d0e7760037128ba8c4c58d2a4173  VideoDecoderHelper.x" \
+              | shasum -a 256 -c -
+          )
+
+          git clone --quiet --filter=blob:none \
+            https://github.com/webmproject/libvpx.git \
+            Tweaks/VP9Compat/vendor/libvpx
+          git -C Tweaks/VP9Compat/vendor/libvpx \
+            checkout --quiet --detach "$LIBVPX_COMMIT"
+
       - name: Build YouMod
         id: youmod
         run: |
@@ -136,19 +170,34 @@ jobs:
             DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           cp YouMod/packages/*.deb "$RUNNER_TEMP/youmod.deb"
 
-      - name: Inject YouMod
+      - name: Build minimal VP9 compatibility layer
+        id: vp9compat
+        run: |
+          vp9compat_version=$(
+            awk '/^Version:/ { print $2 }' Tweaks/VP9Compat/control
+          )
+          echo "version=$vp9compat_version" >> "$GITHUB_OUTPUT"
+          make -C Tweaks/VP9Compat libvpx
+          make -C Tweaks/VP9Compat clean package \
+            DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          cp Tweaks/VP9Compat/packages/*.deb "$RUNNER_TEMP/vp9compat.deb"
+
+      - name: Inject YouMod and VP9 compatibility layer
         id: inject
         env:
           APP_NAME: ${{ inputs.app_name || 'YouTube' }}
           BUNDLE_ID: ${{ inputs.bundle_id || 'com.google.ios.youtube' }}
           YOUTUBE_VERSION: ${{ steps.youtube.outputs.version }}
           YOUMOD_VERSION: ${{ steps.youmod.outputs.version }}
+          VP9COMPAT_VERSION: ${{ steps.vp9compat.outputs.version }}
         run: |
-          package="YouTube_${YOUTUBE_VERSION}_YouMod-${YOUMOD_VERSION}_standard.ipa"
+          package="YouTube_${YOUTUBE_VERSION}_YouMod-${YOUMOD_VERSION}_VP9Compat-${VP9COMPAT_VERSION}.ipa"
           cyan \
             -i "$RUNNER_TEMP/youtube-no-extensions.ipa" \
             -o "$package" \
-            -uwef "$RUNNER_TEMP/youmod.deb" \
+            -uwef \
+              "$RUNNER_TEMP/youmod.deb" \
+              "$RUNNER_TEMP/vp9compat.deb" \
             -n "$APP_NAME" \
             -b "$BUNDLE_ID"
           echo "package=$package" >> "$GITHUB_OUTPUT"
@@ -165,6 +214,7 @@ jobs:
 
           for required in \
             "Payload/YouTube.app/Frameworks/YouMod.dylib" \
+            "Payload/YouTube.app/Frameworks/VP9Compat.dylib" \
             "Payload/YouTube.app/YouMod.bundle/Info.plist"; do
             if ! grep -Fxq "$required" <<< "$entries"; then
               echo "Missing required package entry: $required" >&2
@@ -200,9 +250,33 @@ jobs:
             echo "YouTube executable does not load YouMod.dylib." >&2
             exit 1
           fi
+          if ! otool -L "$RUNNER_TEMP/final-YouTube" \
+              | grep -Fq "VP9Compat.dylib"; then
+            echo "YouTube executable does not load VP9Compat.dylib." >&2
+            exit 1
+          fi
           if otool -L "$RUNNER_TEMP/final-YouTube" \
               | grep -Fq "YTUHD.dylib"; then
             echo "YouTube executable unexpectedly loads YTUHD.dylib." >&2
+            exit 1
+          fi
+
+          unzip -p "$PACKAGE" \
+            "Payload/YouTube.app/Frameworks/VP9Compat.dylib" \
+            > "$RUNNER_TEMP/VP9Compat.dylib"
+          if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Fq "vpx_codec_dec_init_ver"; then
+            echo "VP9Compat does not contain the static libvpx decoder." >&2
+            exit 1
+          fi
+          if otool -L "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Eiq "dav1d|libundirect"; then
+            echo "VP9Compat links an excluded AV1 or pattern-hook library." >&2
+            exit 1
+          fi
+          if strings "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Eiq "HAMDav1dVideoDecoder|libundirect_find"; then
+            echo "VP9Compat contains excluded AV1 or pattern-hook code." >&2
             exit 1
           fi
 
@@ -231,7 +305,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: YouMod_${{ steps.youtube.outputs.version }}_${{ github.run_id }}
+          name: YouMod_VP9Compat_${{ steps.youtube.outputs.version }}_${{ github.run_id }}
           path: |
             ${{ steps.inject.outputs.package }}
             ${{ steps.inject.outputs.package }}.sha256

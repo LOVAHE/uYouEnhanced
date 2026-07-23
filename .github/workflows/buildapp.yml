@@ -206,6 +206,27 @@ jobs:
             mv "$built_package" "$package"
           fi
 
+          # theos-jailed rebuilds the IPA from its own extracted app and can
+          # restore YouTube's PlugIns after the prepare step. Strip extensions
+          # from the final archive so the signed parent bundle never contains
+          # child bundle IDs that do not share its sideload bundle-ID prefix.
+          extension_free_dir="$(mktemp -d)"
+          excluded_extensions_dir="$(mktemp -d)"
+          unzip -q "$package" -d "$extension_free_dir"
+          for extension_container in Extensions PlugIns; do
+            extension_path="$extension_free_dir/Payload/YouTube.app/$extension_container"
+            if [[ ! -d "$extension_path" ]]; then
+              continue
+            fi
+            mv "$extension_path" "$excluded_extensions_dir/"
+            echo "==> Excluded final $extension_container from the sideloaded IPA"
+          done
+          repacked_package="${package%.ipa}-extension-free.ipa"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$extension_free_dir/Payload" \
+            "$repacked_package"
+          mv "$repacked_package" "$package"
+
           unzip -tq "$package"
 
           unexpected_extensions="$({

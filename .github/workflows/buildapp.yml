@@ -60,6 +60,7 @@ on:
           - standard
           - split
           - sources
+          - main-only
   
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -74,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ fromJSON(inputs.diagnostic_mode && (inputs.diagnostic_set == 'sources' && '["source-shell", "source-main", "source-patches", "source-settings", "source-visuals"]' || inputs.diagnostic_set == 'split' && '["enhanced-core", "extras-a", "extras-b"]' || '["base", "uyou-only", "no-uyou", "full"]') || '["full"]') }}
+        profile: ${{ fromJSON(inputs.diagnostic_mode && (inputs.diagnostic_set == 'main-only' && '["source-main"]' || inputs.diagnostic_set == 'sources' && '["source-shell", "source-main", "source-patches", "source-settings", "source-visuals"]' || inputs.diagnostic_set == 'split' && '["enhanced-core", "extras-a", "extras-b"]' || '["base", "uyou-only", "no-uyou", "full"]') || '["full"]') }}
 
     steps:
       - name: Checkout Main
@@ -147,15 +148,19 @@ jobs:
           mv YouTube.ipa YouTube.zip
           unzip -q YouTube.zip
 
-          # App Store migration extensions require entitlements that sideloaded
-          # builds cannot use. Signing tools also do not consistently rewrite
-          # bundle IDs for the newer YouTube.app/Extensions location, which
-          # makes iOS reject the entire app after the main ID gains a suffix.
-          if [[ -d Payload/YouTube.app/Extensions ]]; then
-            mkdir -p excluded-app-extensions
-            mv Payload/YouTube.app/Extensions excluded-app-extensions/
-            echo "==> Excluded App Store-only extensions from the sideloaded IPA"
-          fi
+          # App extensions require App Store entitlements and their bundle IDs
+          # must be rewritten together with the parent app. Signing tools do not
+          # handle every YouTube extension layout consistently, so omit all
+          # extensions from the sideloaded build.
+          mkdir -p excluded-app-extensions
+          for extension_container in Extensions PlugIns; do
+            extension_path="Payload/YouTube.app/$extension_container"
+            if [[ ! -d "$extension_path" ]]; then
+              continue
+            fi
+            mv "$extension_path" excluded-app-extensions/
+            echo "==> Excluded $extension_container from the sideloaded IPA"
+          done
 
           youtube_version=$(defaults read "$(pwd)/Payload/YouTube.app/Info" CFBundleVersion)
           echo "==> YouTube v$youtube_version downloaded!"
@@ -205,9 +210,9 @@ jobs:
 
           unexpected_extensions="$({
             unzip -Z1 "$package" || true
-          } | awk '/\.appex\/Info\.plist$/ && $0 !~ /^Payload\/YouTube\.app\/PlugIns\// { print }')"
+          } | awk '/\.appex\/Info\.plist$/ { print }')"
           if [[ -n "$unexpected_extensions" ]]; then
-            echo "Unsupported app extensions remained outside PlugIns:" >&2
+            echo "Unsupported app extensions remained in the sideloaded IPA:" >&2
             echo "$unexpected_extensions" >&2
             exit 1
           fi
@@ -323,8 +328,6 @@ jobs:
             required_entries=(
               Frameworks/Alderis.framework/Alderis
               Frameworks/CydiaSubstrate.framework/CydiaSubstrate
-              PlugIns/OpenYoutubeSafariExtension.appex/OpenYoutube
-              PlugIns/ShareServiceExtension.appex/Youtube
             )
           fi
           for entry in "${required_entries[@]}"; do

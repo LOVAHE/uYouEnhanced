@@ -184,7 +184,11 @@ jobs:
               exit 1
             fi
             built_package="${ipa_files[0]}"
-            package="packages/uYouEnhanced_${YOUTUBE_VERSION}-${UYOU_VERSION}_diagnostic-${PROFILE}.ipa"
+            if [[ "$DIAGNOSTIC_MODE" == "true" ]]; then
+              package="packages/uYouEnhanced_${YOUTUBE_VERSION}-${UYOU_VERSION}_diagnostic-${PROFILE}.ipa"
+            else
+              package="packages/uYouEnhanced_${YOUTUBE_VERSION}-${UYOU_VERSION}.ipa"
+            fi
             mv "$built_package" "$package"
           fi
 
@@ -303,6 +307,7 @@ jobs:
           BUNDLE_ID: ${{ inputs.bundle_id }}
           APP_NAME: ${{ inputs.app_name }}
           PROFILE: ${{ matrix.profile }}
+          DIAGNOSTIC_MODE: ${{ inputs.diagnostic_mode }}
 
       - name: Upload Artifact
         if: ${{ inputs.upload_artifact || inputs.diagnostic_mode }}
@@ -329,3 +334,4 @@ jobs:
           body: Built for YouTube v${{ env.YOUTUBE_VERSION }} with uYou v${{ env.UYOU_VERSION }}.
           files: main/packages/*.ipa
           draft: true
+          overwrite_files: true

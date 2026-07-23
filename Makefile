@@ -35,11 +35,17 @@ UYOU_INJECT_DYLIB = Tweaks/uYou/Library/MobileSubstrate/DynamicLibraries/uYou.dy
 UYOU_COMPAT_DYLIB = $(THEOS_OBJ_DIR)/uYouCompat.dylib
 UYOU_CORE_INJECT_DYLIBS = $(UYOU_INJECT_DYLIB) $(UYOU_COMPAT_DYLIB)
 $(TWEAK_NAME)_LDFLAGS += $(UYOU_COMPAT_DYLIB)
-OTHER_INJECT_DYLIBS = \
+OTHER_INJECT_DYLIBS_A = \
     $(THEOS_OBJ_DIR)/libFLEX.dylib \
     $(THEOS_OBJ_DIR)/iSponsorBlock.dylib \
     $(THEOS_OBJ_DIR)/YTABConfig.dylib \
     $(THEOS_OBJ_DIR)/YTIcons.dylib \
+    $(THEOS_OBJ_DIR)/YouTubeDislikesReturn.dylib \
+    $(THEOS_OBJ_DIR)/DontEatMyContent.dylib \
+    $(THEOS_OBJ_DIR)/YTHoldForSpeed.dylib \
+    $(THEOS_OBJ_DIR)/YTVideoOverlay.dylib \
+    $(THEOS_OBJ_DIR)/YTweaks.dylib
+OTHER_INJECT_DYLIBS_B = \
     $(THEOS_OBJ_DIR)/YouGroupSettings.dylib \
     $(THEOS_OBJ_DIR)/YouLoop.dylib \
     $(THEOS_OBJ_DIR)/YouMute.dylib \
@@ -48,12 +54,8 @@ OTHER_INJECT_DYLIBS = \
     $(THEOS_OBJ_DIR)/YouSlider.dylib \
     $(THEOS_OBJ_DIR)/YouSpeed.dylib \
     $(THEOS_OBJ_DIR)/YouTimeStamp.dylib \
-    $(THEOS_OBJ_DIR)/YouTubeDislikesReturn.dylib \
-    $(THEOS_OBJ_DIR)/DontEatMyContent.dylib \
-    $(THEOS_OBJ_DIR)/YTHoldForSpeed.dylib \
-    $(THEOS_OBJ_DIR)/YTUHD.dylib \
-    $(THEOS_OBJ_DIR)/YTVideoOverlay.dylib \
-    $(THEOS_OBJ_DIR)/YTweaks.dylib
+    $(THEOS_OBJ_DIR)/YTUHD.dylib
+OTHER_INJECT_DYLIBS = $(OTHER_INJECT_DYLIBS_A) $(OTHER_INJECT_DYLIBS_B)
 
 ifeq ($(DIAGNOSTIC_PROFILE),uyou-only)
 $(TWEAK_NAME)_FILES := Diagnostics/Noop.xm
@@ -63,6 +65,12 @@ else
 $(TWEAK_NAME)_FILES := $(wildcard Sources/*.xm) $(wildcard Sources/*.x) $(wildcard Sources/*.m)
 ifeq ($(DIAGNOSTIC_PROFILE),no-uyou)
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_COMPAT_DYLIB) $(OTHER_INJECT_DYLIBS)
+else ifeq ($(DIAGNOSTIC_PROFILE),enhanced-core)
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS)
+else ifeq ($(DIAGNOSTIC_PROFILE),extras-a)
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS_A)
+else ifeq ($(DIAGNOSTIC_PROFILE),extras-b)
+$(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS_B)
 else
 $(TWEAK_NAME)_INJECT_DYLIBS = $(UYOU_CORE_INJECT_DYLIBS) $(OTHER_INJECT_DYLIBS)
 endif
@@ -145,4 +153,5 @@ else
 before-package::
 	@mkdir -p $(THEOS_STAGING_DIR)/Library/Application\ Support; cp -r Localizations/uYouPlus.bundle $(THEOS_STAGING_DIR)/Library/Application\ Support/
 endif
+
 

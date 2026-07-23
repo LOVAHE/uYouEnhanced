@@ -99,36 +99,55 @@ jobs:
 
           binary_path = pathlib.Path(sys.argv[1])
           binary = bytearray(binary_path.read_bytes())
-          pattern = bytes.fromhex(
+          entry_pattern = bytes.fromhex(
               "28 66 8c 52 c8 2e ac 72 1f 00 08 6b 61 00 00 54 "
               "28 00 80 52"
           )
-          matches = []
-          offset = 0
-          while True:
-              offset = binary.find(pattern, offset)
-              if offset < 0:
-                  break
-              matches.append(offset)
-              offset += 1
-          if len(matches) != 1:
+          vp9_pattern = bytes.fromhex(
+              "28 07 86 52 08 ce ae 72 7f 02 08 6b e1 00 00 54 "
+              "a8 bf 05 90 08 41 52 39 08 00 00 14"
+          )
+          patterns = {
+              "codec capability entry": entry_pattern,
+              "VP9 capability branch": vp9_pattern,
+          }
+          pattern_matches = {}
+          for name, pattern in patterns.items():
+              matches = []
+              offset = 0
+              while True:
+                  offset = binary.find(pattern, offset)
+                  if offset < 0:
+                      break
+                  matches.append(offset)
+                  offset += 1
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f"Expected one {name} signature, found {len(matches)}"
+                  )
+              pattern_matches[name] = matches[0]
+          entry = pattern_matches["codec capability entry"]
+          match = pattern_matches["VP9 capability branch"]
+          if match != entry + 0x7C:
               raise SystemExit(
-                  f"Expected one SupportsCodec signature, found {len(matches)}"
+                  "VP9 capability branch is not inside the verified codec "
+                  "capability function"
               )
-          match = matches[0]
-          if match < 4 or binary[match - 4:match] != bytes.fromhex(
-              "c0 03 5f d6"
-          ):
-              raise SystemExit(
-                  "SupportsCodec signature is not at a verified function boundary"
-              )
-          replacement = bytes.fromhex("20 00 80 52 c0 03 5f d6")
-          binary[match:match + len(replacement)] = replacement
+          patch_offset = match + 20
+          original = bytes.fromhex("08 41 52 39")
+          replacement = bytes.fromhex("28 00 80 52")
+          if binary[patch_offset:patch_offset + len(original)] != original:
+              raise SystemExit("VP9 capability load changed unexpectedly")
+          binary[patch_offset:patch_offset + len(replacement)] = replacement
           binary_path.write_bytes(binary)
-          if binary[match:match + len(replacement)] != replacement:
-              raise SystemExit("Failed to patch SupportsCodec")
+          if (
+              binary[patch_offset:patch_offset + len(replacement)]
+              != replacement
+          ):
+              raise SystemExit("Failed to enable the VP9 capability branch")
           print(
-              f"Patched SupportsCodec to return true at file offset 0x{match:x}"
+              "Enabled only the VP9 capability branch at file offset "
+              f"0x{patch_offset:x}"
           )
           PY
 
@@ -286,22 +305,33 @@ jobs:
           import sys
 
           binary = pathlib.Path(sys.argv[1]).read_bytes()
-          original = bytes.fromhex(
+          entry = bytes.fromhex(
               "28 66 8c 52 c8 2e ac 72 1f 00 08 6b 61 00 00 54 "
               "28 00 80 52"
           )
-          patched = bytes.fromhex(
-              "c0 03 5f d6 "
-              "20 00 80 52 c0 03 5f d6 "
-              "1f 00 08 6b 61 00 00 54 28 00 80 52"
+          original_vp9 = bytes.fromhex(
+              "28 07 86 52 08 ce ae 72 7f 02 08 6b e1 00 00 54 "
+              "a8 bf 05 90 08 41 52 39 08 00 00 14"
           )
-          if original in binary:
-              raise SystemExit("The original SupportsCodec function remains")
-          if binary.count(patched) != 1:
+          patched_vp9 = bytes.fromhex(
+              "28 07 86 52 08 ce ae 72 7f 02 08 6b e1 00 00 54 "
+              "a8 bf 05 90 28 00 80 52 08 00 00 14"
+          )
+          if binary.count(entry) != 1:
               raise SystemExit(
-                  "The guarded SupportsCodec patch is missing or ambiguous"
+                  "The original non-VP9 codec capability path was modified"
               )
-          print("Validated static SupportsCodec patch")
+          if original_vp9 in binary:
+              raise SystemExit("The original VP9 capability branch remains")
+          if binary.count(patched_vp9) != 1:
+              raise SystemExit(
+                  "The targeted VP9 capability patch is missing or ambiguous"
+              )
+          if binary.find(patched_vp9) != binary.find(entry) + 0x7C:
+              raise SystemExit(
+                  "The VP9 capability patch moved outside its verified function"
+              )
+          print("Validated targeted VP9-only capability patch")
           PY
 
           if ! otool -L "$RUNNER_TEMP/final-YouTube" \
@@ -326,6 +356,11 @@ jobs:
           if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
               | grep -Fq "vpx_codec_dec_init_ver"; then
             echo "VP9Compat does not contain the static libvpx decoder." >&2
+            exit 1
+          fi
+          if strings "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Fq "prepareDecoderForFormatDescription:delegateQueue:"; then
+            echo "VP9Compat still overrides the decoder preparation path." >&2
             exit 1
           fi
           if otool -L "$RUNNER_TEMP/VP9Compat.dylib" \

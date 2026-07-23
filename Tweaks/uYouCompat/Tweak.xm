@@ -13,8 +13,9 @@
 #import <YouTubeHeader/YTSectionListViewController.h>
 #import <YouTubeHeader/_ASDisplayView.h>
 
-// This file deliberately contains no preferences or entitlement checks.
-// uYouCompat is an always-on compatibility layer for uYouEnhanced.
+// uYouCompat is an always-on compatibility layer for the closed-source uYou
+// tweak. Keep it limited to disabling legacy paths that are unsafe on current
+// YouTube versions and supplying model/feed-level replacements.
 
 %ctor {
     // The legacy uYouEnhanced ad workarounds hook many of the same classes.
@@ -24,6 +25,7 @@
     [defaults setBool:NO forKey:@"adBlockWorkaroundLite_enabled"];
     [defaults setBool:NO forKey:@"adBlockWorkaround_enabled"];
     [defaults setBool:NO forKey:@"removeYouTubeAds"];
+    [defaults setBool:NO forKey:@"showPlaybackRate"];
 }
 
 @interface YTIElementRenderer (uYouCompat)
@@ -32,13 +34,6 @@
 
 @interface YTIPlayerResponse : NSObject
 - (BOOL)isMonetized;
-- (NSMutableArray *)playerAdsArray;
-- (NSMutableArray *)adSlotsArray;
-@end
-
-@interface YTPlayerResponse : NSObject
-- (NSMutableArray *)playerAdsArray;
-- (NSMutableArray *)adSlotsArray;
 @end
 
 @interface YTInnerTubeCollectionViewController (uYouCompat)
@@ -181,43 +176,15 @@ static NSMutableArray *UYCFilteredSections(NSArray *sections) {
 - (BOOL)isMonetized {
     return NO;
 }
-
-- (NSMutableArray *)playerAdsArray {
-    return [NSMutableArray array];
-}
-
-- (NSMutableArray *)adSlotsArray {
-    return [NSMutableArray array];
-}
-%end
-
-%hook YTPlayerResponse
-- (NSMutableArray *)playerAdsArray {
-    return [NSMutableArray array];
-}
-
-- (NSMutableArray *)adSlotsArray {
-    return [NSMutableArray array];
-}
-%end
-
-%hook YTAdShieldUtils
-+ (id)spamSignalsDictionary {
-    return @{};
-}
-
-+ (id)spamSignalsDictionaryWithoutIDFA {
-    return @{};
-}
 %end
 
 %hook YTDataUtils
 + (id)spamSignalsDictionary {
-    return @{@"ms": @""};
+    return nil;
 }
 
 + (id)spamSignalsDictionaryWithoutIDFA {
-    return @{};
+    return nil;
 }
 %end
 
@@ -228,22 +195,6 @@ static NSMutableArray *UYCFilteredSections(NSArray *sections) {
 
 %hook YTAccountScopedAdsInnerTubeContextDecorator
 - (void)decorateContext:(id)context {
-}
-%end
-
-%hook YTLocalPlaybackController
-- (id)createAdsPlaybackCoordinator {
-    return nil;
-}
-%end
-
-%hook MDXSession
-- (void)adPlaying:(id)ad {
-}
-%end
-
-%hook MDXSessionImpl
-- (void)adPlaying:(id)ad {
 }
 %end
 
@@ -298,3 +249,4 @@ static NSMutableArray *UYCFilteredSections(NSArray *sections) {
     }
 }
 %end
+

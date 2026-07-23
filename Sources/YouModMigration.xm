@@ -121,7 +121,7 @@
 
 - (void)migrateToYouModWithReset:(BOOL)shouldReset {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    
+
     NSDictionary *mapping = @{
         kOLEDKeyboard: OLEDKeyboard,
         kAppTheme: OLEDTheme,
@@ -171,7 +171,7 @@
         NSString *msg = [NSString stringWithFormat:
             @"%ld compatible settings were copied to YouMod.\n\n"
             "uYouEnhanced settings were left untouched.\n"
-            "Restart YouTube → test YouMod.", 
+            "Restart YouTube → test YouMod.",
             (long)migrated];
 
         if (shouldReset) {

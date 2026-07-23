@@ -132,7 +132,7 @@ internal-clean::
 	@rm -rf $(UYOU_PATH)/*
 
 ifneq ($(JAILBROKEN),1)
-ifneq ($(filter full uyou-only,$(DIAGNOSTIC_PROFILE)),)
+ifneq ($(filter full uyou-only enhanced-core extras-a extras-b,$(DIAGNOSTIC_PROFILE)),)
 before-all::
 	@if [[ ! -f $(UYOU_DEB) ]]; then \
 		rm -rf $(UYOU_PATH)/*; \

@@ -1,6 +1,5 @@
 #import <CoreMedia/CoreMedia.h>
 #import <Foundation/Foundation.h>
-#import <VideoToolbox/VideoToolbox.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 
@@ -10,8 +9,6 @@ typedef struct {
     const unsigned int *data;
     uint64_t length;
 } VP9CompatPreferredOutputFormats;
-
-static BOOL VP9CompatHardwareDecodeSupported;
 
 @interface YTUHDVPXVideoDecoder : NSObject
 - (instancetype)initWithDelegate:(id)delegate
@@ -154,6 +151,19 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
 
 %end
 
+%group VP9CompatABRPolicy
+
+%hook MLABRPolicy
+
+- (void)setFormats:(NSArray *)formats {
+    VP9CompatConfigurePlayer(self);
+    %orig;
+}
+
+%end
+
+%end
+
 %group VP9CompatHotConfig
 
 %hook YTHotConfig
@@ -174,16 +184,30 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
 
 %end
 
+%group VP9CompatOnesieConfig
+
+%hook YTIIosOnesieHotConfig
+
+- (BOOL)prepareVideoDecoder {
+    return YES;
+}
+
+%end
+
+%end
+
 %group VP9CompatRenderingView
 
 %hook MLHAMSBDLSampleBufferRenderingView
 
 - (NSArray *)supportedCodecs {
     NSArray *codecs = %orig;
-    if (VP9CompatHardwareDecodeSupported ||
-        ![codecs isKindOfClass:[NSArray class]])
+    if (![codecs isKindOfClass:[NSArray class]])
         return codecs;
 
+    // A resigned IPA cannot keep Google's private alternate-decoder
+    // entitlement. Keep VP9 away from AVSampleBufferDisplayLayer and route it
+    // through the software decoder installed below.
     NSNumber *vp9 = @(kCMVideoCodecType_VP9);
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:codecs.count];
     for (NSNumber *codec in codecs) {
@@ -207,14 +231,24 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
          pixelBufferAttributes:(NSDictionary *)pixelBufferAttributes
         preferredOutputFormats:(VP9CompatPreferredOutputFormats)preferredOutputFormats
                          error:(NSError **)error {
-    if (!VP9CompatHardwareDecodeSupported &&
-        VP9CompatIsVP9(formatDescription))
+    if (VP9CompatIsVP9(formatDescription)) {
+        if (error) *error = nil;
         return VP9CompatCreateSoftwareDecoder(
             delegate,
             delegateQueue,
             pixelBufferAttributes
         );
+    }
     return %orig;
+}
+
+- (void)prepareDecoderForFormatDescription:(id)formatDescription
+                             delegateQueue:(dispatch_queue_t)delegateQueue {
+    // The app binary is patched to advertise VP9 capability. Do not let its
+    // eager preparation path cache a hardware decoder that a resigned app
+    // cannot use; VP9 is created on demand by the software factory hook above.
+    if (!VP9CompatIsVP9(formatDescription))
+        %orig;
 }
 
 %end
@@ -231,13 +265,14 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
          pixelBufferAttributes:(NSDictionary *)pixelBufferAttributes
         preferredOutputFormats:(VP9CompatPreferredOutputFormats)preferredOutputFormats
                          error:(NSError **)error {
-    if (!VP9CompatHardwareDecodeSupported &&
-        VP9CompatIsVP9(formatDescription))
+    if (VP9CompatIsVP9(formatDescription)) {
+        if (error) *error = nil;
         return VP9CompatCreateSoftwareDecoder(
             delegate,
             delegateQueue,
             pixelBufferAttributes
         );
+    }
     return %orig;
 }
 
@@ -252,15 +287,18 @@ static BOOL VP9CompatHasInstanceMethod(const char *className, SEL selector) {
 
 %ctor {
     @autoreleasepool {
-        VP9CompatHardwareDecodeSupported =
-            VTIsHardwareDecodeSupported(kCMVideoCodecType_VP9);
-
         if (VP9CompatHasInstanceMethod("MLHAMPlayerItem", @selector(load)) &&
             VP9CompatHasInstanceMethod(
                 "MLHAMPlayerItem",
                 @selector(loadWithInitialSeekRequired:initialSeekTime:)
             ))
             %init(VP9CompatPlayerItem);
+
+        if (VP9CompatHasInstanceMethod(
+                "MLABRPolicy",
+                @selector(setFormats:)
+            ))
+            %init(VP9CompatABRPolicy);
 
         if (VP9CompatHasInstanceMethod(
                 "YTHotConfig",
@@ -277,6 +315,12 @@ static BOOL VP9CompatHasInstanceMethod(const char *className, SEL selector) {
             %init(VP9CompatHotConfig);
 
         if (VP9CompatHasInstanceMethod(
+                "YTIIosOnesieHotConfig",
+                @selector(prepareVideoDecoder)
+            ))
+            %init(VP9CompatOnesieConfig);
+
+        if (VP9CompatHasInstanceMethod(
                 "MLHAMSBDLSampleBufferRenderingView",
                 @selector(supportedCodecs)
             ))
@@ -290,8 +334,9 @@ static BOOL VP9CompatHasInstanceMethod(const char *className, SEL selector) {
             preferredOutputFormats:
             error:
         );
-        if (VP9CompatHasInstanceMethod("MLVideoDecoderFactory", factorySelector))
+        if (VP9CompatHasInstanceMethod("MLVideoDecoderFactory", factorySelector)) {
             %init(VP9CompatMLDecoderFactory);
+        }
         if (VP9CompatHasInstanceMethod(
                 "HAMDefaultVideoDecoderFactory",
                 factorySelector

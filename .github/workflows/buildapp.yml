@@ -51,6 +51,14 @@ on:
         default: false
         required: false
         type: boolean
+      diagnostic_set:
+        description: "Diagnostic profile set"
+        default: "standard"
+        required: false
+        type: choice
+        options:
+          - standard
+          - split
   
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -65,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ fromJSON(inputs.diagnostic_mode && '["base", "uyou-only", "no-uyou", "full"]' || '["full"]') }}
+        profile: ${{ fromJSON(inputs.diagnostic_mode && (inputs.diagnostic_set == 'split' && '["enhanced-core", "extras-a", "extras-b"]' || '["base", "uyou-only", "no-uyou", "full"]') || '["full"]') }}
 
     steps:
       - name: Checkout Main
@@ -213,6 +221,42 @@ jobs:
               required_files=(uYouEnhanced.dylib uYou.dylib uYouCompat.dylib)
               forbidden_files=(libFLEX.dylib iSponsorBlock.dylib YTUHD.dylib YTweaks.dylib)
               ;;
+            enhanced-core)
+              required_files=(uYouEnhanced.dylib uYou.dylib uYouCompat.dylib libcolorpicker.dylib)
+              forbidden_files=(
+                libFLEX.dylib iSponsorBlock.dylib YTABConfig.dylib YTIcons.dylib
+                YouGroupSettings.dylib YouLoop.dylib YouMute.dylib YouPiP.dylib
+                YouQuality.dylib YouSlider.dylib YouSpeed.dylib YouTimeStamp.dylib
+                YouTubeDislikesReturn.dylib DontEatMyContent.dylib
+                YTHoldForSpeed.dylib YTUHD.dylib YTVideoOverlay.dylib YTweaks.dylib
+              )
+              ;;
+            extras-a)
+              required_files=(
+                uYouEnhanced.dylib uYou.dylib uYouCompat.dylib libcolorpicker.dylib
+                libFLEX.dylib iSponsorBlock.dylib YTABConfig.dylib YTIcons.dylib
+                YouTubeDislikesReturn.dylib DontEatMyContent.dylib
+                YTHoldForSpeed.dylib YTVideoOverlay.dylib YTweaks.dylib
+              )
+              forbidden_files=(
+                YouGroupSettings.dylib YouLoop.dylib YouMute.dylib YouPiP.dylib
+                YouQuality.dylib YouSlider.dylib YouSpeed.dylib
+                YouTimeStamp.dylib YTUHD.dylib
+              )
+              ;;
+            extras-b)
+              required_files=(
+                uYouEnhanced.dylib uYou.dylib uYouCompat.dylib libcolorpicker.dylib
+                YouGroupSettings.dylib YouLoop.dylib YouMute.dylib YouPiP.dylib
+                YouQuality.dylib YouSlider.dylib YouSpeed.dylib
+                YouTimeStamp.dylib YTUHD.dylib
+              )
+              forbidden_files=(
+                libFLEX.dylib iSponsorBlock.dylib YTABConfig.dylib YTIcons.dylib
+                YouTubeDislikesReturn.dylib DontEatMyContent.dylib
+                YTHoldForSpeed.dylib YTVideoOverlay.dylib YTweaks.dylib
+              )
+              ;;
             no-uyou)
               required_files=(
                 uYouEnhanced.dylib uYouCompat.dylib libFLEX.dylib iSponsorBlock.dylib
@@ -260,7 +304,9 @@ jobs:
           required_entries=()
           if [[ "$PROFILE" == "uyou-only" ]]; then
             required_entries=(Frameworks/CydiaSubstrate.framework/CydiaSubstrate)
-          elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == "full" ]]; then
+          elif [[ "$PROFILE" == "no-uyou" || "$PROFILE" == "enhanced-core" ||
+                  "$PROFILE" == "extras-a" || "$PROFILE" == "extras-b" ||
+                  "$PROFILE" == "full" ]]; then
             required_entries=(
               Frameworks/Alderis.framework/Alderis
               Frameworks/CydiaSubstrate.framework/CydiaSubstrate
@@ -286,7 +332,8 @@ jobs:
               YouSlider.bundle YouSpeed.bundle YouTimeStamp.bundle iSponsorBlock.bundle
               uYouLocalization.bundle uYouPlus.bundle
             )
-          elif [[ "$PROFILE" == "full" ]]; then
+          elif [[ "$PROFILE" == "enhanced-core" || "$PROFILE" == "extras-a" ||
+                  "$PROFILE" == "extras-b" || "$PROFILE" == "full" ]]; then
             required_directories=(
               DontEatMyContent.bundle RYD.bundle YTABC.bundle YTHoldForSpeed.bundle
               YTUHD.bundle YTVideoOverlay.bundle YTWKS.bundle YouGroupSettings.bundle
@@ -328,6 +375,21 @@ jobs:
           path: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
           if-no-files-found: error
 
+      - name: Create Diagnostic Release
+        if: ${{ inputs.diagnostic_mode }}
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UYOU_VERSION: ${{ inputs.uyou_version }}
+          YOUTUBE_VERSION: ${{ steps.prepare_youtube.outputs.youtube_version }}
+        with:
+          tag_name: diagnostic-${{ github.run_id }}-${{ matrix.profile }}
+          name: Diagnostic ${{ matrix.profile }} - YouTube v${{ env.YOUTUBE_VERSION }}
+          body: Temporary startup-isolation build. Do not use as a production release.
+          files: main/packages/${{ steps.build_package.outputs.package }}
+          draft: true
+          overwrite_files: true
+
       - name: Create Release
         if: ${{ inputs.create_release && !inputs.diagnostic_mode && matrix.profile == 'full' }}
         id: create_release
@@ -343,3 +405,4 @@ jobs:
           files: main/packages/*.ipa
           draft: true
           overwrite_files: true
+

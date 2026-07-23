@@ -1,6 +1,9 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:

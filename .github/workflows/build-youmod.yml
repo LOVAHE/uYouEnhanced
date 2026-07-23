@@ -91,6 +91,47 @@ jobs:
               "$RUNNER_TEMP/clean-youtube/Payload/YouTube.app/Info.plist"
           )
           echo "version=$youtube_version" >> "$GITHUB_OUTPUT"
+
+          python3 - \
+            "$RUNNER_TEMP/clean-youtube/Payload/YouTube.app/YouTube" <<'PY'
+          import pathlib
+          import sys
+
+          binary_path = pathlib.Path(sys.argv[1])
+          binary = bytearray(binary_path.read_bytes())
+          pattern = bytes.fromhex(
+              "28 66 8c 52 c8 2e ac 72 1f 00 08 6b 61 00 00 54 "
+              "28 00 80 52"
+          )
+          matches = []
+          offset = 0
+          while True:
+              offset = binary.find(pattern, offset)
+              if offset < 0:
+                  break
+              matches.append(offset)
+              offset += 1
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"Expected one SupportsCodec signature, found {len(matches)}"
+              )
+          match = matches[0]
+          if match < 4 or binary[match - 4:match] != bytes.fromhex(
+              "c0 03 5f d6"
+          ):
+              raise SystemExit(
+                  "SupportsCodec signature is not at a verified function boundary"
+              )
+          replacement = bytes.fromhex("20 00 80 52 c0 03 5f d6")
+          binary[match:match + len(replacement)] = replacement
+          binary_path.write_bytes(binary)
+          if binary[match:match + len(replacement)] != replacement:
+              raise SystemExit("Failed to patch SupportsCodec")
+          print(
+              f"Patched SupportsCodec to return true at file offset 0x{match:x}"
+          )
+          PY
+
           (
             cd "$RUNNER_TEMP/clean-youtube"
             ditto -c -k --sequesterRsrc --keepParent Payload \
@@ -240,6 +281,29 @@ jobs:
 
           unzip -p "$PACKAGE" "Payload/YouTube.app/YouTube" \
             > "$RUNNER_TEMP/final-YouTube"
+          python3 - "$RUNNER_TEMP/final-YouTube" <<'PY'
+          import pathlib
+          import sys
+
+          binary = pathlib.Path(sys.argv[1]).read_bytes()
+          original = bytes.fromhex(
+              "28 66 8c 52 c8 2e ac 72 1f 00 08 6b 61 00 00 54 "
+              "28 00 80 52"
+          )
+          patched = bytes.fromhex(
+              "c0 03 5f d6 "
+              "20 00 80 52 c0 03 5f d6 "
+              "1f 00 08 6b 61 00 00 54 28 00 80 52"
+          )
+          if original in binary:
+              raise SystemExit("The original SupportsCodec function remains")
+          if binary.count(patched) != 1:
+              raise SystemExit(
+                  "The guarded SupportsCodec patch is missing or ambiguous"
+              )
+          print("Validated static SupportsCodec patch")
+          PY
+
           if ! otool -L "$RUNNER_TEMP/final-YouTube" \
               | grep -Fq "YouMod.dylib"; then
             echo "YouTube executable does not load YouMod.dylib." >&2
@@ -266,12 +330,17 @@ jobs:
           fi
           if otool -L "$RUNNER_TEMP/VP9Compat.dylib" \
               | grep -Eiq "dav1d|libundirect"; then
-            echo "VP9Compat links an excluded AV1 or pattern-hook library." >&2
+            echo "VP9Compat links an excluded AV1 or external pattern library." >&2
             exit 1
           fi
           if strings "$RUNNER_TEMP/VP9Compat.dylib" \
               | grep -Eiq "HAMDav1dVideoDecoder|libundirect_find"; then
-            echo "VP9Compat contains excluded AV1 or pattern-hook code." >&2
+            echo "VP9Compat contains excluded AV1 or external pattern code." >&2
+            exit 1
+          fi
+          if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Fq "YouTube"; then
+            echo "VP9Compat does not contain the guarded YouTube target." >&2
             exit 1
           fi
 

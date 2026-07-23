@@ -34,6 +34,7 @@ DIAGNOSTIC_PROFILE ?= full
 UYOU_INJECT_DYLIB = Tweaks/uYou/Library/MobileSubstrate/DynamicLibraries/uYou.dylib
 UYOU_COMPAT_DYLIB = $(THEOS_OBJ_DIR)/uYouCompat.dylib
 UYOU_CORE_INJECT_DYLIBS = $(UYOU_INJECT_DYLIB) $(UYOU_COMPAT_DYLIB)
+$(TWEAK_NAME)_LDFLAGS += $(UYOU_COMPAT_DYLIB)
 OTHER_INJECT_DYLIBS = \
     $(THEOS_OBJ_DIR)/libFLEX.dylib \
     $(THEOS_OBJ_DIR)/iSponsorBlock.dylib \

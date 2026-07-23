@@ -244,6 +244,15 @@ jobs:
             fi
           done
 
+          if [[ "$PROFILE" != "base" ]]; then
+            parent_dylib="$RUNNER_TEMP/uYouEnhanced-${PROFILE}.dylib"
+            unzip -p "$package" "Payload/YouTube.app/Frameworks/uYouEnhanced.dylib" > "$parent_dylib"
+            if ! otool -L "$parent_dylib" | grep -q 'uYouCompat\.dylib'; then
+              echo "uYouEnhanced.dylib is not linked to uYouCompat.dylib; constructor ordering is unsafe" >&2
+              exit 1
+            fi
+          fi
+
           required_entries=()
           if [[ "$PROFILE" == "uyou-only" ]]; then
             required_entries=(Frameworks/CydiaSubstrate.framework/CydiaSubstrate)

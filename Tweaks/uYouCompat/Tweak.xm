@@ -16,6 +16,16 @@
 // This file deliberately contains no preferences or entitlement checks.
 // uYouCompat is an always-on compatibility layer for uYouEnhanced.
 
+%ctor {
+    // The legacy uYouEnhanced ad workarounds hook many of the same classes.
+    // uYouEnhanced links against this dylib, so dyld runs this constructor
+    // first and the old optional groups remain disabled when its ctor starts.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setBool:NO forKey:@"adBlockWorkaroundLite_enabled"];
+    [defaults setBool:NO forKey:@"adBlockWorkaround_enabled"];
+    [defaults setBool:NO forKey:@"removeYouTubeAds"];
+}
+
 @interface YTIElementRenderer (uYouCompat)
 - (NSData *)elementData;
 @end

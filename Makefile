@@ -58,7 +58,7 @@ OTHER_INJECT_DYLIBS_B = \
 OTHER_INJECT_DYLIBS = $(OTHER_INJECT_DYLIBS_A) $(OTHER_INJECT_DYLIBS_B)
 SOURCE_DIAGNOSTIC_PROFILES = source-shell source-main source-patches source-settings source-visuals
 SOURCE_SETTINGS_FILES = \
-    Diagnostics/uYouPlusBundleStub.m \
+    Diagnostics/uYouPlusBundleStub.mm \
     Sources/uYouPlusSettings.xm \
     Sources/AppIconOptionsController.m \
     Sources/ColourOptionsController.m \

@@ -144,6 +144,9 @@ jobs:
         run: |
           ytuhd_version=$(awk '/^Version:/ { print $2 }' YTUHD/control)
           echo "version=$ytuhd_version" >> "$GITHUB_OUTPUT"
+          make -C YTUHD libvpx dav1d
+          test -f YTUHD/vendor/libvpx_ios/libvpx.a
+          test -f YTUHD/vendor/dav1d_ios/libdav1d.a
           make -C YTUHD clean package \
             DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOAD=1
           cp YTUHD/packages/*.deb "$RUNNER_TEMP/ytuhd.deb"

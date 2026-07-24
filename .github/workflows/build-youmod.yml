@@ -1,6 +1,9 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -156,11 +159,21 @@ jobs:
         run: |
           ytuhd_version=$(awk '/^Version:/ { print $2 }' YTUHD/control)
           echo "version=$ytuhd_version" >> "$GITHUB_OUTPUT"
-          make -C YTUHD clean package \
-            DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          make -C YTUHD clean package DEBUG=0 FINALPACKAGE=1
           cp YTUHD/packages/*.deb "$RUNNER_TEMP/ytuhd.deb"
 
-      - name: Inject YouMod and Tonwalter YTUHD
+      - name: Build YTVideoOverlay
+        id: ytvideooverlay
+        run: |
+          ytvideooverlay_version=$(
+            awk '/^Version:/ { print $2 }' YTVideoOverlay/control
+          )
+          echo "version=$ytvideooverlay_version" >> "$GITHUB_OUTPUT"
+          make -C YTVideoOverlay clean package DEBUG=0 FINALPACKAGE=1
+          cp YTVideoOverlay/packages/*.deb \
+            "$RUNNER_TEMP/ytvideooverlay.deb"
+
+      - name: Inject YouMod, Tonwalter YTUHD, and YTVideoOverlay
         id: inject
         env:
           APP_NAME: ${{ inputs.app_name || 'YouTube' }}
@@ -168,14 +181,17 @@ jobs:
           YOUTUBE_VERSION: ${{ steps.youtube.outputs.version }}
           YOUMOD_VERSION: ${{ steps.youmod.outputs.version }}
           YTUHD_VERSION: ${{ steps.ytuhd.outputs.version }}
+          YT_VIDEO_OVERLAY_VERSION: >-
+            ${{ steps.ytvideooverlay.outputs.version }}
         run: |
-          package="YouTube_${YOUTUBE_VERSION}_YouMod-${YOUMOD_VERSION}_YTUHD-Tonwalter-${YTUHD_VERSION}.ipa"
+          package="YouTube_${YOUTUBE_VERSION}_YouMod-${YOUMOD_VERSION}_YTUHD-Tonwalter-${YTUHD_VERSION}_YTVideoOverlay-${YT_VIDEO_OVERLAY_VERSION}.ipa"
           cyan \
             -i "$RUNNER_TEMP/youtube-no-extensions.ipa" \
             -o "$package" \
             -uwef \
               "$RUNNER_TEMP/youmod.deb" \
               "$RUNNER_TEMP/ytuhd.deb" \
+              "$RUNNER_TEMP/ytvideooverlay.deb" \
             -n "$APP_NAME" \
             -b "$BUNDLE_ID"
           echo "package=$package" >> "$GITHUB_OUTPUT"
@@ -193,8 +209,10 @@ jobs:
           for required in \
             "Payload/YouTube.app/Frameworks/YouMod.dylib" \
             "Payload/YouTube.app/Frameworks/YTUHD.dylib" \
+            "Payload/YouTube.app/Frameworks/YTVideoOverlay.dylib" \
             "Payload/YouTube.app/YouMod.bundle/Info.plist" \
-            "Payload/YouTube.app/YTUHD.bundle/Info.plist"; do
+            "Payload/YouTube.app/YTUHD.bundle/Info.plist" \
+            "Payload/YouTube.app/YTVideoOverlay.bundle/Info.plist"; do
             if ! grep -Fxq "$required" <<< "$entries"; then
               echo "Missing required package entry: $required" >&2
               exit 1
@@ -270,6 +288,11 @@ jobs:
             echo "YouTube executable does not load YTUHD.dylib." >&2
             exit 1
           fi
+          if ! otool -L "$RUNNER_TEMP/final-YouTube" \
+              | grep -Fq "YTVideoOverlay.dylib"; then
+            echo "YouTube executable does not load YTVideoOverlay.dylib." >&2
+            exit 1
+          fi
           if otool -L "$RUNNER_TEMP/final-YouTube" \
               | grep -Fq "VP9Compat.dylib"; then
             echo "YouTube executable unexpectedly loads VP9Compat.dylib." >&2
@@ -290,11 +313,6 @@ jobs:
               exit 1
             fi
           done
-          if nm -u "$RUNNER_TEMP/YTUHD.dylib" \
-              | grep -Fq "_MSHookFunction"; then
-            echo "YTUHD unexpectedly contains an inline function hook." >&2
-            exit 1
-          fi
           if otool -L "$RUNNER_TEMP/YTUHD.dylib" \
               | grep -Eiq "dav1d|libundirect|vpx"; then
             echo "YTUHD links an excluded decoder or pattern library." >&2

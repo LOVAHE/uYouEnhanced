@@ -1,6 +1,6 @@
 Package: com.lovahe.vp9compat
 Name: VP9Compat
-Version: 0.2.2
+Version: 0.3.0
 Architecture: iphoneos-arm
 Description: Software VP9 compatibility layer for sideloaded YouTube 21.21.3.
 Maintainer: LOVAHE

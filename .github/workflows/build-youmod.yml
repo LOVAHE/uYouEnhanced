@@ -71,6 +71,8 @@ jobs:
         run: |
           echo "::add-mask::$IPA_URL"
           curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 30 --max-time 900 \
             "$IPA_URL" --output "$RUNNER_TEMP/youtube.ipa"
           unzip -tq "$RUNNER_TEMP/youtube.ipa"
           mkdir "$RUNNER_TEMP/clean-youtube"

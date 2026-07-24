@@ -1,6 +1,9 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -363,6 +366,17 @@ jobs:
             echo "VP9Compat still overrides the decoder preparation path." >&2
             exit 1
           fi
+          for required in \
+            "_preparedDecoder" \
+            "_preparedFormatDescription" \
+            "_preparedPixelBufferAttributes" \
+            "clearPreparedDecoder"; do
+            if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
+                | grep -Fq "$required"; then
+              echo "VP9Compat is missing prepared-decoder reuse: $required" >&2
+              exit 1
+            fi
+          done
           if otool -L "$RUNNER_TEMP/VP9Compat.dylib" \
               | grep -Eiq "dav1d|libundirect"; then
             echo "VP9Compat links an excluded AV1 or external pattern library." >&2

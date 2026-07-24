@@ -1,6 +1,9 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -91,65 +94,6 @@ jobs:
               "$RUNNER_TEMP/clean-youtube/Payload/YouTube.app/Info.plist"
           )
           echo "version=$youtube_version" >> "$GITHUB_OUTPUT"
-
-          python3 - \
-            "$RUNNER_TEMP/clean-youtube/Payload/YouTube.app/YouTube" <<'PY'
-          import pathlib
-          import sys
-
-          binary_path = pathlib.Path(sys.argv[1])
-          binary = bytearray(binary_path.read_bytes())
-          entry_pattern = bytes.fromhex(
-              "28 66 8c 52 c8 2e ac 72 1f 00 08 6b 61 00 00 54 "
-              "28 00 80 52"
-          )
-          vp9_pattern = bytes.fromhex(
-              "28 07 86 52 08 ce ae 72 7f 02 08 6b e1 00 00 54 "
-              "a8 bf 05 90 08 41 52 39 08 00 00 14"
-          )
-          patterns = {
-              "codec capability entry": entry_pattern,
-              "VP9 capability branch": vp9_pattern,
-          }
-          pattern_matches = {}
-          for name, pattern in patterns.items():
-              matches = []
-              offset = 0
-              while True:
-                  offset = binary.find(pattern, offset)
-                  if offset < 0:
-                      break
-                  matches.append(offset)
-                  offset += 1
-              if len(matches) != 1:
-                  raise SystemExit(
-                      f"Expected one {name} signature, found {len(matches)}"
-                  )
-              pattern_matches[name] = matches[0]
-          entry = pattern_matches["codec capability entry"]
-          match = pattern_matches["VP9 capability branch"]
-          if match != entry + 0x7C:
-              raise SystemExit(
-                  "VP9 capability branch is not inside the verified codec "
-                  "capability function"
-              )
-          patch_offset = match + 20
-          original = bytes.fromhex("08 41 52 39")
-          replacement = bytes.fromhex("28 00 80 52")
-          if binary[patch_offset:patch_offset + len(original)] != original:
-              raise SystemExit("VP9 capability load changed unexpectedly")
-          binary[patch_offset:patch_offset + len(replacement)] = replacement
-          binary_path.write_bytes(binary)
-          if (
-              binary[patch_offset:patch_offset + len(replacement)]
-              != replacement
-          ):
-              raise SystemExit("Failed to enable the VP9 capability branch")
-          print(
-              "Enabled only the VP9 capability branch at file offset "
-              f"0x{patch_offset:x}"
-          )
-          PY
 
           (
             cd "$RUNNER_TEMP/clean-youtube"
@@ -319,19 +263,21 @@ jobs:
           )
           if binary.count(entry) != 1:
               raise SystemExit(
-                  "The original non-VP9 codec capability path was modified"
+                  "The runtime SupportsCodec hook target is missing or ambiguous"
               )
-          if original_vp9 in binary:
-              raise SystemExit("The original VP9 capability branch remains")
-          if binary.count(patched_vp9) != 1:
+          if binary.count(original_vp9) != 1:
               raise SystemExit(
-                  "The targeted VP9 capability patch is missing or ambiguous"
+                  "The original VP9 capability branch was unexpectedly modified"
               )
-          if binary.find(patched_vp9) != binary.find(entry) + 0x7C:
+          if patched_vp9 in binary:
               raise SystemExit(
-                  "The VP9 capability patch moved outside its verified function"
+                  "The obsolete always-on VP9 capability patch remains"
               )
-          print("Validated targeted VP9-only capability patch")
+          if binary.find(original_vp9) != binary.find(entry) + 0x7C:
+              raise SystemExit(
+                  "The VP9 capability branch moved outside its verified function"
+              )
+          print("Validated unmodified runtime SupportsCodec hook target")
           PY
 
           if ! otool -L "$RUNNER_TEMP/final-YouTube" \
@@ -358,19 +304,21 @@ jobs:
             echo "VP9Compat does not contain the static libvpx decoder." >&2
             exit 1
           fi
-          if strings "$RUNNER_TEMP/VP9Compat.dylib" \
-              | grep -Fq "prepareDecoderForFormatDescription:delegateQueue:"; then
-            echo "VP9Compat still overrides the decoder preparation path." >&2
+          if ! nm -u "$RUNNER_TEMP/VP9Compat.dylib" \
+              | grep -Fq "_MSHookFunction"; then
+            echo "VP9Compat does not contain the runtime function hook." >&2
             exit 1
           fi
           for required in \
             "_preparedDecoder" \
             "_preparedFormatDescription" \
             "_preparedPixelBufferAttributes" \
-            "clearPreparedDecoder"; do
+            "clearPreparedDecoder" \
+            "prepareDecoderForFormatDescription:delegateQueue:" \
+            "SupportsCodec hook target"; do
             if ! strings "$RUNNER_TEMP/VP9Compat.dylib" \
                 | grep -Fq "$required"; then
-              echo "VP9Compat is missing prepared-decoder reuse: $required" >&2
+              echo "VP9Compat is missing runtime decoder routing: $required" >&2
               exit 1
             fi
           done

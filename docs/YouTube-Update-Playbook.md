@@ -97,7 +97,7 @@ workflow 必须继续验证：
 - YTUHD 包含系统 VP9 注册符号。
 - YTUHD 不包含 `SupportsCodec`、libundirect、libvpx 或 dav1d decoder。
 
-如果 YouTube 内部的校验字节发生变化，先刖析新二进制，不能直接删除校验。
+如果 YouTube 内部的校验字节发生变化，先分析新二进制，不能直接删除校验。
 
 ### 3. 真机验证顺序
 

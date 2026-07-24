@@ -1,6 +1,9 @@
 name: Build YouMod IPA
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-youmod.yml"
   workflow_dispatch:
     inputs:
       ipa_url:
@@ -39,7 +42,7 @@ env:
 
 jobs:
   build:
-    name: YouMod with Tonwalter YTUHD
+    name: YouMod with native VP9 YTUHD
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -136,6 +139,9 @@ jobs:
           git clone --quiet --filter=blob:none \
             https://github.com/Tonwalter888/YTUHD.git YTUHD
           git -C YTUHD checkout --quiet --detach "$YTUHD_COMMIT"
+          git -C YTUHD apply \
+            "$GITHUB_WORKSPACE/Tweaks/YTUHD-native-vp9-ios26.patch"
+          git -C YTUHD diff --check
 
           git clone --quiet --filter=blob:none \
             https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
@@ -303,7 +309,8 @@ jobs:
             "YTUHDEnableSWVP9orSWAV1" \
             "YTUHDFixPlaybackIssues" \
             "iosPlayerClientSharedConfigDisableServerDrivenAbr" \
-            "iosPlayerClientSharedConfigPostponeCabrPreferredFormatFiltering"; do
+            "iosPlayerClientSharedConfigPostponeCabrPreferredFormatFiltering" \
+            "VTRegisterSupplementalVideoDecoderIfAvailable"; do
             if ! strings "$RUNNER_TEMP/YTUHD.dylib" \
                 | grep -Fq "$required"; then
               echo "Tonwalter YTUHD marker is missing: $required" >&2
@@ -317,7 +324,7 @@ jobs:
           fi
           if strings "$RUNNER_TEMP/YTUHD.dylib" \
               | grep -Eiq \
-                "HAMDav1dVideoDecoder|YTUHDVPXVideoDecoder|libundirect_find|vpx_codec_dec_init_ver"; then
+                "HAMDav1dVideoDecoder|YTUHDVPXVideoDecoder|libundirect_find|vpx_codec_dec_init_ver|SupportsCodec"; then
             echo "YTUHD contains an excluded software decoder or pattern hook." >&2
             exit 1
           fi
@@ -346,7 +353,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: YouMod_TonwalterYTUHD_${{ steps.youtube.outputs.version }}_${{ github.run_id }}
+          name: YouMod_NativeVP9_${{ steps.youtube.outputs.version }}_${{ github.run_id }}
           path: |
             ${{ steps.inject.outputs.package }}
             ${{ steps.inject.outputs.package }}.sha256

@@ -11,11 +11,13 @@ typedef struct {
 } VP9CompatPreferredOutputFormats;
 
 @interface YTUHDVPXVideoDecoder : NSObject
+@property (nonatomic, weak) id delegate;
 - (instancetype)initWithDelegate:(id)delegate
                    delegateQueue:(dispatch_queue_t)delegateQueue
                      decodeQueue:(dispatch_queue_t)decodeQueue
            pixelBufferAttributes:(id)pixelBufferAttributes
                           config:(HAMVPXDecoderConfig)config;
+- (void)terminate;
 @end
 
 static id VP9CompatObjectForSelector(id object, SEL selector) {
@@ -72,11 +74,100 @@ static void VP9CompatConfigurePlayer(id playerItem) {
     );
 }
 
-static id VP9CompatCreateSoftwareDecoder(
+static void VP9CompatClearPreparedDecoder(id factory) {
+    SEL selector = NSSelectorFromString(@"clearPreparedDecoder");
+    if (factory && [factory respondsToSelector:selector])
+        ((void (*)(id, SEL))objc_msgSend)(factory, selector);
+}
+
+static CMFormatDescriptionRef VP9CompatCMFormatDescription(id formatDescription) {
+    SEL selector = @selector(formatDescription);
+    if (!formatDescription ||
+        ![formatDescription respondsToSelector:selector])
+        return NULL;
+    return ((CMFormatDescriptionRef (*)(id, SEL))objc_msgSend)(
+        formatDescription,
+        selector
+    );
+}
+
+static id VP9CompatTakePreparedDecoder(
+    id factory,
     id delegate,
     dispatch_queue_t delegateQueue,
+    id formatDescription,
     id pixelBufferAttributes
 ) {
+    if (!factory) return nil;
+
+    id preparedDecoder =
+        VP9CompatValueForKey(factory, @"_preparedDecoder");
+    if (!preparedDecoder) return nil;
+
+    BOOL matches = NO;
+    id preparedDelegateQueue =
+        VP9CompatValueForKey(factory, @"_delegateQueue");
+    id preparedFormat =
+        VP9CompatValueForKey(factory, @"_preparedFormatDescription");
+    id preparedPixelBufferAttributes =
+        VP9CompatValueForKey(factory, @"_preparedPixelBufferAttributes");
+    CMFormatDescriptionRef requestedCMFormat =
+        VP9CompatCMFormatDescription(formatDescription);
+    CMFormatDescriptionRef preparedCMFormat =
+        VP9CompatCMFormatDescription(preparedFormat);
+    BOOL pixelBufferAttributesMatch =
+        pixelBufferAttributes == preparedPixelBufferAttributes ||
+        [pixelBufferAttributes
+            isEqualToDictionary:preparedPixelBufferAttributes];
+
+    if (preparedDelegateQueue == delegateQueue &&
+        requestedCMFormat &&
+        preparedCMFormat &&
+        CMFormatDescriptionEqual(requestedCMFormat, preparedCMFormat) &&
+        pixelBufferAttributesMatch) {
+        matches = YES;
+    }
+
+    // YouTube prepares the VOD decoder before requesting it from the factory.
+    // Reuse that exact decoder so its prepare callback and state are retained.
+    if (matches) {
+        VP9CompatClearPreparedDecoder(factory);
+        SEL selector = @selector(setDelegate:);
+        if ([preparedDecoder respondsToSelector:selector]) {
+            ((void (*)(id, SEL, id))objc_msgSend)(
+                preparedDecoder,
+                selector,
+                delegate
+            );
+        }
+        return preparedDecoder;
+    }
+
+    if ([preparedDecoder respondsToSelector:@selector(terminate)])
+        ((void (*)(id, SEL))objc_msgSend)(
+            preparedDecoder,
+            @selector(terminate)
+        );
+    VP9CompatClearPreparedDecoder(factory);
+    return nil;
+}
+
+static id VP9CompatCreateSoftwareDecoder(
+    id factory,
+    id delegate,
+    dispatch_queue_t delegateQueue,
+    id formatDescription,
+    id pixelBufferAttributes
+) {
+    id preparedDecoder = VP9CompatTakePreparedDecoder(
+        factory,
+        delegate,
+        delegateQueue,
+        formatDescription,
+        pixelBufferAttributes
+    );
+    if (preparedDecoder) return preparedDecoder;
+
     dispatch_queue_t decodeQueue =
         dispatch_queue_create("com.lovahe.vp9compat.decode", DISPATCH_QUEUE_SERIAL);
     HAMVPXDecoderConfig config = {
@@ -204,8 +295,10 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
     if (VP9CompatIsVP9(formatDescription)) {
         if (error) *error = nil;
         return VP9CompatCreateSoftwareDecoder(
+            self,
             delegate,
             delegateQueue,
+            formatDescription,
             pixelBufferAttributes
         );
     }
@@ -229,8 +322,10 @@ static BOOL VP9CompatIsVP9(id formatDescription) {
     if (VP9CompatIsVP9(formatDescription)) {
         if (error) *error = nil;
         return VP9CompatCreateSoftwareDecoder(
+            nil,
             delegate,
             delegateQueue,
+            formatDescription,
             pixelBufferAttributes
         );
     }

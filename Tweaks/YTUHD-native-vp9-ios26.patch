@@ -1,0 +1,88 @@
+diff --git a/Settings.x b/Settings.x
+index fe72bfa..948757f 100644
+--- a/Settings.x
++++ b/Settings.x
+@@ -365,6 +365,11 @@ NSBundle *YTUHDBundle() {
+ %end
+ 
+ %ctor {
+-    hasSWVP9VideoDecoder = %c(HAMVPXVideoDecoder) != nil;
++    NSOperatingSystemVersion version =
++        NSProcessInfo.processInfo.operatingSystemVersion;
++    BOOL modernNativeVP9 = version.majorVersion > 26 ||
++        (version.majorVersion == 26 && version.minorVersion >= 2);
++    hasSWVP9VideoDecoder =
++        %c(HAMVPXVideoDecoder) != nil || modernNativeVP9;
+     %init;
+ }
+diff --git a/Tweak.xm b/Tweak.xm
+index 7c592e3..f8c3019 100644
+--- a/Tweak.xm
++++ b/Tweak.xm
+@@ -1,3 +1,6 @@
++#import <CoreMedia/CoreMedia.h>
++#import <VideoToolbox/VideoToolbox.h>
++#import <dlfcn.h>
+ #import <substrate.h>
+ #import <sys/sysctl.h>
+ #import <version.h>
+@@ -18,6 +21,39 @@ NSArray <MLFormat *> *filteredFormats(NSArray <MLFormat *> *formats) {
+     return formats;
+ }
+ 
++static BOOL YTUHDSystemHasModernNativeVP9(void) {
++    NSOperatingSystemVersion version =
++        NSProcessInfo.processInfo.operatingSystemVersion;
++    return version.majorVersion > 26 ||
++        (version.majorVersion == 26 && version.minorVersion >= 2);
++}
++
++static void YTUHDRegisterNativeVP9IfAvailable(void) {
++    if (!YTUHDSystemHasModernNativeVP9()) return;
++
++    typedef void (*RegisterSupplementalDecoderFn)(CMVideoCodecType);
++    RegisterSupplementalDecoderFn registerDecoder =
++        (RegisterSupplementalDecoderFn)dlsym(
++            RTLD_DEFAULT,
++            "VTRegisterSupplementalVideoDecoderIfAvailable"
++        );
++    if (!registerDecoder) {
++        void *videoToolbox = dlopen(
++            "/System/Library/Frameworks/VideoToolbox.framework/VideoToolbox",
++            RTLD_LAZY | RTLD_LOCAL
++        );
++        if (videoToolbox) {
++            registerDecoder = (RegisterSupplementalDecoderFn)dlsym(
++                videoToolbox,
++                "VTRegisterSupplementalVideoDecoderIfAvailable"
++            );
++        }
++    }
++    if (registerDecoder) {
++        registerDecoder(kCMVideoCodecType_VP9);
++    }
++}
++
+ static void hookFormatsBase(YTIHamplayerConfig *config) {
+     if ([config.videoAbrConfig respondsToSelector:@selector(setPreferSoftwareHdrOverHardwareSdr:)])
+         config.videoAbrConfig.preferSoftwareHdrOverHardwareSdr = YES; // Removed in YouTube 19.22.3
+@@ -198,6 +234,7 @@ static void hookFormatsBase(YTIHamplayerConfig *config) {
+ %end
+ 
+ %ctor {
++    YTUHDRegisterNativeVP9IfAvailable();
+     [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+         DecodeThreadsKey: @2
+     }];
+diff --git a/control b/control
+index 607913b..25b15b2 100644
+--- a/control
++++ b/control
+@@ -1,6 +1,6 @@
+ Package: dev.water888.ytuhd
+ Name: YTUHD
+-Version: 1.13.4
++Version: 1.13.4+nativevp9.1
+ Architecture: iphoneos-arm
+ Description: Unlocks 1440p and 2160p resolutions in iOS YouTube app.
+ Maintainer: Tonwalter888

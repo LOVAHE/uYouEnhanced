@@ -1,0 +1,198 @@
+name: Build YouMod audio fix
+
+on:
+  push:
+    paths:
+      - .github/workflows/build-youmod-audiofix.yml
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Install dependencies
+        run: brew install make ldid
+
+      - name: Setup Theos
+        run: |
+          git clone --quiet --depth=1 --recurse-submodules https://github.com/roothide/theos.git
+          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/Tonwalter888/iOS-SDKs.git
+          cd iOS-SDKs
+          git sparse-checkout set --no-cone iPhoneOS26.5.sdk
+          git checkout --quiet
+          mv *.sdk ../theos/sdks
+          cd ..
+          echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Headers
+        run: |
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
+          git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
+
+      - name: Clone YouMod 2.0.0
+        run: git clone --quiet --depth=1 --branch v2.0.0 https://github.com/Tonwalter888/YouMod.git YouMod
+
+      - name: Apply safe original-audio patch
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def patch_file(path, method_sig):
+              p = Path(path)
+              s = p.read_text()
+              old = '''    NSArray *availableTracks = [switchcon valueForKey:@"_availableAudioTracks"];
+    if (!availableTracks || availableTracks.count == 0) return;
+    YTIAudioTrack *matchedTrack = nil;
+
+    if (INTFORVAL(AudioTrack) == 1) {
+        // Loop for all tracks
+        for (YTIAudioTrack *track in availableTracks) {
+            if ([track.id_p hasSuffix:@".4"]) {
+                matchedTrack = track;
+                break;
+            }
+        }
+    } else if (INTFORVAL(AudioTrack) == 2) {
+        // Loop for all tracks
+        for (YTIAudioTrack *track in availableTracks) {
+            if ([track.id_p hasPrefix:userTargetLang]) {
+                matchedTrack = track;
+                break;
+            }
+        }
+
+        // Check if it's dubbed
+        if (matchedTrack && [matchedTrack isAutoDubbed] && IS_ENABLED(NoDubbedAudioTrack)) matchedTrack = nil;
+
+        if (!matchedTrack && IS_ENABLED(NoDubbedAudioTrack)) {
+            for (YTIAudioTrack *track in availableTracks) {
+                if ([track.id_p hasSuffix:@".4"]) {
+                    matchedTrack = track;
+                    break;
+                }
+            }
+        }
+    }
+
+    // If found, change to it
+    if (matchedTrack) {
+'''
+              new = '''    NSArray *availableTracks = [switchcon valueForKey:@"_availableAudioTracks"];
+    // A single audio track does not need switching. Re-selecting it while the
+    // 21.36+ player is still settling can invalidate playback.
+    if (!availableTracks || availableTracks.count <= 1) return;
+    YTIAudioTrack *matchedTrack = nil;
+
+    if (INTFORVAL(AudioTrack) == 1) {
+        // Prefer YouTube's long-standing original-track marker, but never select
+        // an auto-dubbed track.
+        for (YTIAudioTrack *track in availableTracks) {
+            if ([track.id_p hasSuffix:@".4"] && ![track isAutoDubbed]) {
+                matchedTrack = track;
+                break;
+            }
+        }
+
+        // If the marker changes, use a non-dubbed default track when available.
+        if (!matchedTrack) {
+            for (YTIAudioTrack *track in availableTracks) {
+                if (![track isAutoDubbed] && track.audioIsDefault) {
+                    matchedTrack = track;
+                    break;
+                }
+            }
+        }
+
+        // Last safe fallback: only choose a non-dubbed track when there is
+        // exactly one such candidate.
+        if (!matchedTrack) {
+            YTIAudioTrack *onlyNonDubbed = nil;
+            NSUInteger nonDubbedCount = 0;
+            for (YTIAudioTrack *track in availableTracks) {
+                if (![track isAutoDubbed]) {
+                    onlyNonDubbed = track;
+                    nonDubbedCount++;
+                }
+            }
+            if (nonDubbedCount == 1) matchedTrack = onlyNonDubbed;
+        }
+    } else if (INTFORVAL(AudioTrack) == 2) {
+        for (YTIAudioTrack *track in availableTracks) {
+            if ([track.id_p hasPrefix:userTargetLang]) {
+                matchedTrack = track;
+                break;
+            }
+        }
+
+        if (matchedTrack && [matchedTrack isAutoDubbed] && IS_ENABLED(NoDubbedAudioTrack))
+            matchedTrack = nil;
+
+        if (!matchedTrack && IS_ENABLED(NoDubbedAudioTrack)) {
+            for (YTIAudioTrack *track in availableTracks) {
+                if ([track.id_p hasSuffix:@".4"] && ![track isAutoDubbed]) {
+                    matchedTrack = track;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Never force an AI-dubbed track. If the desired track is already the
+    // default, avoid a redundant setAudioTrack call.
+    if (matchedTrack && ![matchedTrack isAutoDubbed] && !matchedTrack.audioIsDefault) {
+'''
+              if old not in s:
+                  raise SystemExit(f"audio block not found in {path}")
+              s=s.replace(old,new,1)
+              p.write_text(s)
+
+          patch_file("YouMod/Files/Player.x", "YouModAutoAudioTrack")
+          patch_file("YouMod/Files/Shorts.x", "YouModAutoAudioTrack")
+
+          p=Path("YouMod/Files/Player.x")
+          s=p.read_text()
+          old='if (INTFORVAL(AudioTrack) != 0) [playerviewController performSelector:@selector(YouModAutoAudioTrack) withObject:nil afterDelay:0.1];'
+          new='if (INTFORVAL(AudioTrack) != 0) [playerviewController performSelector:@selector(YouModAutoAudioTrack) withObject:nil afterDelay:0.75];'
+          if old not in s:
+              raise SystemExit("player delay line not found")
+          p.write_text(s.replace(old,new,1))
+
+          p=Path("YouMod/Files/Shorts.x")
+          s=p.read_text()
+          old='if (INTFORVAL(AudioTrack) != 0) [self performSelector:@selector(YouModAutoAudioTrack:) withObject:main afterDelay:0.5];'
+          new='if (INTFORVAL(AudioTrack) != 0) [self performSelector:@selector(YouModAutoAudioTrack:) withObject:main afterDelay:0.75];'
+          if old not in s:
+              raise SystemExit("shorts delay line not found")
+          p.write_text(s.replace(old,new,1))
+
+          # New installs prefer original audio by default.
+          p=Path("YouMod/Files/Settings.x")
+          s=p.read_text()
+          needle='''        ForwardSeconds: @10.0,
+'''
+          repl='''        ForwardSeconds: @10.0,
+        AudioTrack: @1,
+        NoDubbedAudioTrack: @YES,
+'''
+          if needle not in s:
+              raise SystemExit("defaults anchor not found")
+          p.write_text(s.replace(needle,repl,1))
+          PY
+
+      - name: Build
+        run: |
+          cd YouMod
+          make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mkdir -p ../out
+          cp packages/*.deb ../out/youmod-audiofix.deb
+          dpkg-deb -f ../out/youmod-audiofix.deb Package Version Architecture Depends > ../out/manifest.txt
+          shasum -a 256 ../out/youmod-audiofix.deb >> ../out/manifest.txt
+          git diff -- Files/Player.x Files/Shorts.x Files/Settings.x > ../out/audiofix.patch
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: youmod-2.0.0-audiofix
+          path: out/
+          retention-days: 7
+          compression-level: 0

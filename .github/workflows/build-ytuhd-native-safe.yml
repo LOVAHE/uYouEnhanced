@@ -1,0 +1,90 @@
+name: Build YTUHD Native SABR
+on:
+  push:
+    branches: [fix/ytuhd-native-sabr]
+    paths:
+      - .github/workflows/build-ytuhd-native-safe.yml
+      - Tweaks/ytuhd_native_safe.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.actor == github.repository_owner
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      THEOS_COMMIT: 16362d3aa83a0acd56df4493d575d34306d42478
+      LOGOS_COMMIT: a62370066a97e36d59b200a9fa10c5091f5e8972
+      SDK_COMMIT: f573274868bf0f954ed01a1ab029756218a91119
+      YOUTUBE_HEADER_COMMIT: 7a87be7855e2ea8f820f634518388eec9b667ec4
+      PS_HEADER_COMMIT: 1bb7d9c7d1bc40a57f83e1e58aa53bcf4acdcbfa
+      YTUHD_COMMIT: cf266c2a351eb4f97e6bb2fb129509c501bdf207
+      OVERLAY_COMMIT: 0f7dbc4387a0e38aad3180744e484fef6cbb9094
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Build dependencies
+        run: |
+          brew install ldid dpkg make
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Pinned toolchain and sources
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout -q --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+          git -C "$THEOS/vendor/logos" fetch -q --depth=1 origin "$LOGOS_COMMIT"
+          git -C "$THEOS/vendor/logos" checkout -q --detach "$LOGOS_COMMIT"
+          git clone -q --no-checkout --filter=tree:0 https://github.com/Tonwalter888/iOS-SDKs.git "$RUNNER_TEMP/sdks"
+          git -C "$RUNNER_TEMP/sdks" sparse-checkout init --no-cone
+          git -C "$RUNNER_TEMP/sdks" sparse-checkout set iPhoneOS18.6.sdk
+          git -C "$RUNNER_TEMP/sdks" checkout -q "$SDK_COMMIT"
+          mv "$RUNNER_TEMP/sdks/iPhoneOS18.6.sdk" "$THEOS/sdks/"
+          git clone -q --filter=blob:none https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
+          git -C "$THEOS/include/YouTubeHeader" checkout -q --detach "$YOUTUBE_HEADER_COMMIT"
+          git clone -q --filter=blob:none https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
+          git -C "$THEOS/include/PSHeader" checkout -q --detach "$PS_HEADER_COMMIT"
+          git clone -q --filter=blob:none https://github.com/Tonwalter888/YTUHD.git YTUHD
+          git -C YTUHD checkout -q --detach "$YTUHD_COMMIT"
+          git clone -q --filter=blob:none https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
+          git -C YTVideoOverlay checkout -q --detach "$OVERLAY_COMMIT"
+      - name: Apply patch and run policy tests
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 Tweaks/ytuhd_native_safe.py YTUHD | tee out/policy-tests.txt
+      - name: Compile YTUHD
+        run: |
+          make -C YTUHD clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          cp YTUHD/packages/*.deb out/ytuhd-native-sabr.deb
+      - name: Validate and archive exact source
+        run: |
+          set -euo pipefail
+          dpkg-deb -f out/ytuhd-native-sabr.deb > out/control.txt
+          dpkg-deb -x out/ytuhd-native-sabr.deb "$RUNNER_TEMP/component"
+          binary=$(find "$RUNNER_TEMP/component" -name YTUHD.dylib -print -quit)
+          test -n "$binary"
+          otool -L "$binary" > out/dependencies.txt
+          nm -u "$binary" > out/imports.txt
+          if grep -Eq 'MSHookFunction|libundirect|mprotect|vm_protect' out/imports.txt; then
+            echo 'Unsafe native function patch import' >&2; exit 1
+          fi
+          strings "$binary" > "$RUNNER_TEMP/strings.txt"
+          if grep -Eq 'iosPlayerClientSharedConfigDisableServerDrivenAbr|_postponePreferredFormatFiltering|SupportsCodec|acquirePlayerForVideo:|streamSelectorHasSelectableVideoFormats:' "$RUNNER_TEMP/strings.txt"; then
+            echo 'Legacy playback override found in component' >&2; exit 1
+          fi
+          grep -F '1.13.4+nativevp9.2-sabr' "$RUNNER_TEMP/strings.txt"
+          mkdir -p out/source
+          cp YTUHD/NativeSafe.xm YTUHD/NativePolicy.h YTUHD/native_policy_test.c YTUHD/Settings.x YTUHD/ReloadVideo.x YTUHD/Header.h YTUHD/Makefile YTUHD/control YTUHD/LICENSE out/source/
+          cp Tweaks/ytuhd_native_safe.py out/source/
+          git -C YTUHD diff > out/source/upstream.diff
+          printf 'build=%s\nYTUHD=%s\nTheos=%s\nLogos=%s\nSDK=%s\nYouTubeHeader=%s\nPSHeader=%s\nYTVideoOverlay=%s\n' "$GITHUB_SHA" "$YTUHD_COMMIT" "$THEOS_COMMIT" "$LOGOS_COMMIT" "$SDK_COMMIT" "$YOUTUBE_HEADER_COMMIT" "$PS_HEADER_COMMIT" "$OVERLAY_COMMIT" > out/source-revisions.txt
+          shasum -a 256 out/ytuhd-native-sabr.deb > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ytuhd-native-sabr-fix2
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 0

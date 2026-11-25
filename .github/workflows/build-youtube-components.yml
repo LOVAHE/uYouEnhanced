@@ -19,7 +19,7 @@ jobs:
   tweaks:
     name: YouMod and companion tweaks
     if: github.actor == github.repository_owner
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       YOUMOD_COMMIT: 8f9670966d62f20590b867db4377e0331b1e824b

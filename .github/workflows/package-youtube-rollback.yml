@@ -1,0 +1,144 @@
+name: Package earlier YouTube
+
+on:
+  push:
+    branches: [build/youtube-21.47.6]
+    paths:
+      - .github/workflows/package-youtube-rollback.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: package-youtube-rollback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: YouTube ${{ matrix.version }}
+    if: github.actor == github.repository_owner
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: 21.41.5
+            identifier: com.google.ios.youtube-21.41.5-Decrypted
+            sha1: 8130e02e8ccf7a9b0ced1971be0f607f7cc62117
+          - version: 21.29.03
+            identifier: com.google.ios.youtube-21.29.03-Decrypted
+            sha1: d6c35fa626199f9462c2d249e2acb6ef6911803d
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMPONENTS_RUN_ID: "45612831379"
+      PYZULE_COMMIT: 740d3716dcd98c20c000f12cdb88f1f0b2a533a4
+      APP_NAME: YouTube
+      BUNDLE_ID: com.google.ios.youtube
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          path: components
+          run-id: ${{ env.COMPONENTS_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Install packaging tools
+        run: |
+          brew install ldid dpkg
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl --fail --location --silent --show-error \
+            "https://github.com/inoahdev/tbd/releases/download/2.2/tbd-mac" \
+            --output "$RUNNER_TEMP/bin/tbd"
+          chmod +x "$RUNNER_TEMP/bin/tbd"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          pipx install \
+            "https://github.com/asdfzxcvbn/pyzule-rw/archive/${PYZULE_COMMIT}.zip"
+
+      - name: Download YouTube
+        id: youtube
+        env:
+          IDENTIFIER: ${{ matrix.identifier }}
+          SHA1: ${{ matrix.sha1 }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 30 --max-time 900 \
+            "https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}.ipa" \
+            --output "$RUNNER_TEMP/youtube.ipa"
+          echo "$SHA1  $RUNNER_TEMP/youtube.ipa" | shasum -a 1 -c -
+          unzip -tq "$RUNNER_TEMP/youtube.ipa"
+          unzip -p "$RUNNER_TEMP/youtube.ipa" "Payload/YouTube.app/Info.plist" \
+            > "$RUNNER_TEMP/Info.plist"
+          version=$(
+            /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" \
+              "$RUNNER_TEMP/Info.plist"
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          unzip -p "$RUNNER_TEMP/youtube.ipa" "Payload/YouTube.app/YouTube" \
+            > "$RUNNER_TEMP/clean-YouTube"
+          otool -l "$RUNNER_TEMP/clean-YouTube" | grep -A4 LC_ENCRYPTION_INFO | grep -E 'cryptid +0'
+
+      - name: Inject tweaks
+        id: inject
+        env:
+          YOUTUBE_VERSION: ${{ steps.youtube.outputs.version }}
+        run: |
+          set -euo pipefail
+          youmod_version=$(dpkg-deb -f components/youmod-components/youmod.deb Version)
+          package="YouTube_${YOUTUBE_VERSION}_YouMod-${youmod_version}_Full-NativeSABR.ipa"
+          cyan -i "$RUNNER_TEMP/youtube.ipa" -o "$package" -uwef \
+            components/youmod-components/*.deb \
+            components/ytuhd-native-sabr/ytuhd-native-sabr.deb \
+            -n "$APP_NAME" -b "$BUNDLE_ID"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "youmod_version=$youmod_version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate package
+        env:
+          PACKAGE: ${{ steps.inject.outputs.package }}
+        run: |
+          set -euo pipefail
+          unzip -tq "$PACKAGE"
+          entries=$(unzip -Z1 "$PACKAGE")
+          grep -E '^Payload/YouTube\.app/Frameworks/[^/]+\.dylib$' <<< "$entries"
+          for required in \
+            "Payload/YouTube.app/Frameworks/YouMod.dylib" \
+            "Payload/YouTube.app/Frameworks/YTUHD.dylib" \
+            "Payload/YouTube.app/Frameworks/YTVideoOverlay.dylib" \
+            "Payload/YouTube.app/YouMod.bundle/Info.plist"; do
+            if ! grep -Fxq "$required" <<< "$entries"; then
+              echo "Missing required package entry: $required" >&2
+              exit 1
+            fi
+          done
+          if grep -Eq '\.appex/|^Payload/YouTube\.app/(PlugIns|Extensions|Watch)/' <<< "$entries"; then
+            echo "App extensions remained in $PACKAGE" >&2
+            exit 1
+          fi
+          unzip -p "$PACKAGE" "Payload/YouTube.app/YouTube" > "$RUNNER_TEMP/final-YouTube"
+          otool -L "$RUNNER_TEMP/final-YouTube" > "$RUNNER_TEMP/final-load.txt"
+          grep -F "YouMod.dylib" "$RUNNER_TEMP/final-load.txt"
+          unzip -p "$PACKAGE" "Payload/YouTube.app/Info.plist" > "$RUNNER_TEMP/final-Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RUNNER_TEMP/final-Info.plist")" = "$BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$RUNNER_TEMP/final-Info.plist")" = "$APP_NAME"
+          shasum -a 256 "$PACKAGE" | tee "$PACKAGE.sha256"
+
+      - name: Create draft release
+        env:
+          PACKAGE: ${{ steps.inject.outputs.package }}
+          YOUTUBE_VERSION: ${{ steps.youtube.outputs.version }}
+          YOUMOD_VERSION: ${{ steps.inject.outputs.youmod_version }}
+        run: |
+          set -euo pipefail
+          {
+            echo '```'
+            cat components/youmod-components/source-revisions.txt
+            echo '```'
+          } > notes.md
+          gh release create "youtube-${YOUTUBE_VERSION}-youmod-${YOUMOD_VERSION}-${GITHUB_RUN_NUMBER}" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title "YouTube ${YOUTUBE_VERSION} + YouMod ${YOUMOD_VERSION}" \
+            --notes-file notes.md \
+            "$PACKAGE" "$PACKAGE.sha256"
